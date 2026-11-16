@@ -1,0 +1,10 @@
+node_modules/
+web/
+build/
+Payload/
+*.ipa
+ios/App/App/public/*
+!ios/App/App/public/.gitkeep
+ios/App/Pods/
+plugins/sachnoi-bridge/ios/Plugin/vendor/
+.DS_Store

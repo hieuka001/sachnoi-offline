@@ -1,0 +1,8 @@
+{
+  "id": "tien-hiep", "name": "Từ điển Tiên hiệp — Kiếm hiệp", "version": "1.0.0",
+  "description": "Tên riêng, cảnh giới, thuật ngữ Hán-Việt thường gặp trong truyện tiên hiệp/kiếm hiệp. Bổ sung dần qua báo lỗi đọc sai.",
+  "entries": {
+    "Trúc Cơ": "trúc cơ", "Kim Đan": "kim đan", "Nguyên Anh": "nguyên anh",
+    "Hóa Thần": "hóa thần", "Luyện Khí": "luyện khí", "Độ Kiếp": "độ kiếp"
+  }
+}

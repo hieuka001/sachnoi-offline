@@ -1,0 +1,246 @@
+// app.js — Điều phối giao diện: thư viện -> đọc -> nghe; giọng; kiểm tra đọc.
+import { store, newId, formatBytes } from "./lib/store.js";
+import { extractBook } from "./lib/extract.js";
+import { Player, native, isNative } from "./lib/player.js";
+import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
+import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  book: null, extracted: null, chapterIndex: 0, manifest: null,
+  player: null, sentenceOffset: 0, // chỉ số câu đầu của chương đang xem
+};
+
+// ---------- Tabs ----------
+document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+  const tab = btn.dataset.tab;
+  $("view-library").classList.toggle("active", tab === "library");
+  $("view-voices").classList.toggle("active", tab === "voices");
+  $("view-lab").classList.toggle("active", tab === "lab");
+  $("view-reader").classList.remove("active");
+  if (tab === "voices") renderVoices();
+}));
+
+// ---------- Player ----------
+state.player = new Player({
+  onSentence: (idx, s) => {
+    $("playerSentence").textContent = s.original;
+    $("playerProgress").textContent = `Câu ${idx + 1} / ${state.player.sentences.length} · ${s.chapterTitle || ""}`;
+    highlightSentence(idx);
+    store.setProgress(state.book.id, { sentenceIndex: idx }).catch(() => {});
+  },
+  onState: (playing) => { $("playBtn").textContent = playing ? "⏸" : "▶"; },
+  onProgress: (pct) => { $("playerProgress").textContent = `Đang chuẩn bị sách… ${pct}%`; },
+});
+$("playBtn").addEventListener("click", () => {
+  const p = state.player;
+  if (p.playing) p.pause();
+  else if (p.index >= 0) p.resume();
+  else p.play(state.sentenceOffset || 0);
+});
+$("nextBtn").addEventListener("click", () => state.player.next());
+$("prevBtn").addEventListener("click", () => state.player.prev());
+$("speedSelect").addEventListener("change", (e) => { state.player.speed = parseFloat(e.target.value); state.player.audio.playbackRate = state.player.speed; });
+$("sleepSelect").addEventListener("change", (e) => {
+  const v = e.target.value;
+  if (v === "off") state.player.setSleep("off");
+  else if (v === "chapter") state.player.setSleep("chapter");
+  else state.player.setSleep("minutes", parseInt(v, 10));
+});
+$("voiceSelect").addEventListener("change", (e) => { state.player.voice = e.target.value; state.player.cache.clear(); });
+
+// ---------- Thư viện ----------
+async function renderLibrary() {
+  const books = await store.listBooks();
+  $("emptyLib").style.display = books.length ? "none" : "block";
+  $("bookGrid").innerHTML = books.map((b) => `
+    <div class="card">
+      <h4>${escapeHtml(b.title)}</h4>
+      <p class="muted">${escapeHtml(b.author || "")} ${b.format?.toUpperCase() || ""} · ${b.chapters || "?"} chương/phần</p>
+      <div class="row">
+        <button class="btn primary" data-open="${b.id}">Đọc & nghe</button>
+        <button class="btn danger" data-del="${b.id}">Xoá</button>
+      </div>
+    </div>`).join("");
+  $("bookGrid").querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.open)));
+  $("bookGrid").querySelectorAll("[data-del]").forEach((el) => el.addEventListener("click", async () => {
+    if (confirm("Xoá sách này khỏi máy?")) { await store.deleteBook(el.dataset.del); renderLibrary(); }
+  }));
+}
+
+$("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $("importStatus").textContent = `Đang đọc file ${file.name}…`;
+  try {
+    const extracted = await extractBook(file);
+    const meta = {
+      id: newId(), title: extracted.title, author: extracted.author,
+      format: file.name.split(".").pop().toLowerCase(), chapters: extracted.chapters.length,
+      scanned: extracted.scanned, addedAt: Date.now(),
+    };
+    await store.addBook(meta, file);
+    // Lưu kèm bản đã trích để mở lại không phải trích lại từ đầu
+    await store.setProgress(meta.id, { extractedCache: extracted, sentenceIndex: 0 });
+    $("importStatus").textContent = `Đã thêm “${meta.title}” (${meta.chapters} chương/phần).`;
+    renderLibrary();
+  } catch (err) {
+    $("importStatus").textContent = "Không đọc được file: " + err.message;
+  }
+  e.target.value = "";
+});
+
+// ---------- Đọc ----------
+async function openBook(id) {
+  const books = await store.listBooks();
+  const meta = books.find((b) => b.id === id);
+  if (!meta) return;
+  state.book = meta;
+  const progress = await store.getProgress(id);
+  let extracted = progress?.extractedCache;
+  if (!extracted) {
+    const blob = await store.getBlob(id);
+    if (!blob) { alert("Không tìm thấy file sách trên máy."); return; }
+    extracted = await extractBook(new File([blob], meta.title + "." + meta.format));
+    await store.setProgress(id, { extractedCache: extracted, sentenceIndex: progress?.sentenceIndex || 0 });
+  }
+  state.extracted = extracted;
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+  $("view-reader").classList.add("active");
+  $("readerTitle").textContent = extracted.title;
+  $("scanWarn").classList.toggle("hidden", !extracted.scanned);
+  $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
+  const startSentence = progress?.sentenceIndex || 0;
+  await state.player.load(meta, extracted, await store.getBookDict(id));
+  // Tìm chương chứa câu đã nghe dở
+  let acc = 0, startChapter = 0;
+  for (let i = 0; i < state.player.sentences.length; i++) { if (i === startSentence) { startChapter = state.player.sentences[i].chapterIndex; break; } }
+  state.player.index = startSentence > 0 ? startSentence : -1;
+  showChapter(startChapter);
+  $("playerBar").classList.remove("hidden");
+  $("playerTitle").textContent = extracted.title;
+  if (startSentence > 0) $("playerProgress").textContent = `Đã nghe tới câu ${startSentence + 1} — bấm ▶ để nghe tiếp.`;
+}
+
+function showChapter(ci) {
+  state.chapterIndex = ci;
+  $("chapterSelect").value = String(ci);
+  const ch = state.extracted.chapters[ci];
+  // Chỉ số câu bắt đầu của chương này trong danh sách phẳng
+  state.sentenceOffset = state.player.sentences.findIndex((s) => s.chapterIndex === ci);
+  let globalIdx = state.sentenceOffset;
+  $("readerBody").innerHTML = ch.paragraphs.map((para) => {
+    const sents = splitSentences(para);
+    const html = sents.map((s) => `<span class="sent" data-idx="${globalIdx++}">${escapeHtml(s)}</span>`).join(" ");
+    return `<p>${html}</p>`;
+  }).join("");
+  $("readerBody").querySelectorAll(".sent").forEach((el) => {
+    el.addEventListener("click", () => state.player.play(parseInt(el.dataset.idx, 10)));
+    el.addEventListener("contextmenu", async (ev) => {
+      ev.preventDefault();
+      const word = window.getSelection()?.toString().trim();
+      if (!word) { alert("Bôi đen từ cần sửa cách đọc rồi nhấn giữ lại."); return; }
+      const reading = prompt(`Đọc từ “${word}” thành:`);
+      if (!reading) return;
+      const dict = await store.getBookDict(state.book.id);
+      dict[word] = reading;
+      await store.setBookDict(state.book.id, dict);
+      await state.player.load(state.book, state.extracted, dict);
+      alert(`Đã nhớ: từ nay “${word}” đọc là “${reading}” trong sách này.`);
+    });
+  });
+  highlightSentence(state.player.index);
+}
+
+function highlightSentence(idx) {
+  document.querySelectorAll(".sent.current").forEach((e) => e.classList.remove("current"));
+  const s = state.player.sentences[idx];
+  if (!s) return;
+  if (s.chapterIndex !== state.chapterIndex) { showChapter(s.chapterIndex); }
+  const el = document.querySelector(`.sent[data-idx="${idx}"]`);
+  if (el) { el.classList.add("current"); el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+}
+
+$("chapterSelect").addEventListener("change", (e) => showChapter(parseInt(e.target.value, 10)));
+$("backBtn").addEventListener("click", () => {
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+  $("view-library").classList.add("active");
+  renderLibrary();
+});
+
+// ---------- Giọng ----------
+async function renderVoices() {
+  if (!state.manifest) {
+    const { manifest, source } = await loadManifest();
+    state.manifest = manifest;
+    $("manifestSource").textContent = source === "online" ? "Danh mục mới nhất" : "Danh mục kèm app (đang offline)";
+    if (isNative()) native()?.markManifestSeen?.({ version: manifest.version }).catch(() => {});
+  }
+  const m = state.manifest;
+  const installed = await installedPackIds();
+  const packHtml = (p) => {
+    const isIn = installed.has(p.id);
+    const size = p.files.reduce((a, f) => a + (f.size || 0), 0);
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="row between"><h4>${escapeHtml(p.name)}</h4><span class="chip ${isIn ? "ok" : ""}">${isIn ? "✓ Đã tải" : formatBytes(size)}</span></div>
+      <p class="muted">${escapeHtml(p.description || "")}</p>
+      <progress id="prog-${p.id}" value="0" max="100" class="hidden"></progress>
+      <div class="row">
+        ${p.status === "coming-soon" ? `<span class="chip">Sắp có</span>`
+          : isIn ? `<button class="btn danger" data-del-pack="${p.id}">Xoá gói</button>`
+               : `<button class="btn primary" data-dl-pack="${p.id}">Tải về máy</button>`}
+      </div></div>`;
+  };
+  $("packList").innerHTML = (m.packs || []).map(packHtml).join("");
+  $("packList").querySelectorAll("[data-dl-pack]").forEach((el) => el.addEventListener("click", async () => {
+    const pack = m.packs.find((p) => p.id === el.dataset.dlPack);
+    const bar = $(`prog-${pack.id}`);
+    bar.classList.remove("hidden");
+    el.disabled = true;
+    try {
+      await downloadPack(pack, (pct) => { bar.value = pct; });
+      renderVoices();
+    } catch (err) { alert("Tải gói lỗi: " + err.message); el.disabled = false; }
+  }));
+  $("packList").querySelectorAll("[data-del-pack]").forEach((el) => el.addEventListener("click", async () => {
+    const pack = m.packs.find((p) => p.id === el.dataset.delPack);
+    if (confirm(`Xoá gói “${pack.name}” khỏi máy?`)) { await deletePack(pack); renderVoices(); }
+  }));
+  // Giọng VieNeu preset
+  const voices = m.voices || [];
+  $("voiceSelect").innerHTML = `<option value="default">Giọng mặc định</option>` +
+    voices.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`).join("");
+  $("voiceList").innerHTML = voices.map((v) => `
+    <div class="card">
+      <h4>${escapeHtml(v.name)} ${v.pick ? '<span class="chip star">★ Đề xuất</span>' : ""}</h4>
+      <p class="muted">${escapeHtml(v.region || "")} · ${escapeHtml(v.gender || "")} · ${escapeHtml(v.character || "")}</p>
+      ${v.sample ? `<audio controls preload="none" src="${escapeHtml(v.sample)}" style="width:100%"></audio>` : ""}
+    </div>`).join("");
+}
+
+// ---------- Kiểm tra đọc / chẩn đoán ----------
+$("labRun").addEventListener("click", () => {
+  const input = $("labInput").value;
+  const { sentences, chunks } = prepareForSpeech(input);
+  $("labOutput").textContent =
+    "Câu sau chuẩn hoá:\n" + sentences.map((s) => "• " + s.spoken).join("\n") +
+    "\n\nĐoạn tổng hợp gửi vào máy đọc:\n" + chunks.map((c, i) => `${i + 1}. ${c}`).join("\n");
+});
+$("diagRun").addEventListener("click", async () => {
+  const bridge = native();
+  if (bridge?.ttsDiagnostics) {
+    try { $("diagOutput").textContent = JSON.stringify(await bridge.ttsDiagnostics(), null, 2); }
+    catch (e) { $("diagOutput").textContent = "Lỗi chẩn đoán: " + e.message; }
+  } else if (bridge?.getInfo) {
+    $("diagOutput").textContent = JSON.stringify(await bridge.getInfo(), null, 2);
+  } else {
+    $("diagOutput").textContent = "Đang chạy trên trình duyệt (không có cầu native) — giọng nghe thử sẽ là giọng hệ thống của trình duyệt. Mở bằng app iOS để dùng giọng VieNeu offline và nghe nền.";
+  }
+});
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+renderLibrary();

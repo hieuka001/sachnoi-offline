@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Sách Nói Offline</title>
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/jszip.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Sách Nói Offline</div>
+  <nav class="tabs">
+    <button data-tab="library" class="tab active">Sách</button>
+    <button data-tab="voices" class="tab">Giọng</button>
+    <button data-tab="lab" class="tab">Kiểm tra đọc</button>
+  </nav>
+</header>
+
+<main>
+  <!-- THƯ VIỆN -->
+  <section id="view-library" class="view active">
+    <div class="row between">
+      <h2>Thư viện trên máy</h2>
+      <label class="btn primary file-btn">+ Thêm sách
+        <input id="fileInput" type="file" accept=".epub,.pdf,.txt,.md" hidden>
+      </label>
+    </div>
+    <p id="importStatus" class="muted"></p>
+    <div id="bookGrid" class="grid"></div>
+    <p id="emptyLib" class="muted">Chưa có sách nào. Bấm “Thêm sách” để chọn file EPUB, PDF hoặc TXT trên máy — sách chỉ lưu trong máy này.</p>
+  </section>
+
+  <!-- ĐỌC -->
+  <section id="view-reader" class="view">
+    <div class="row between">
+      <button id="backBtn" class="btn">‹ Thư viện</button>
+      <select id="chapterSelect" class="select grow"></select>
+    </div>
+    <h2 id="readerTitle"></h2>
+    <p id="scanWarn" class="warn hidden">Sách này có vẻ là bản scan (ít chữ trích được) — độ chính xác khi đọc phụ thuộc chất lượng OCR, hiện app đọc phần chữ trích được.</p>
+    <div id="readerBody" class="reader"></div>
+  </section>
+
+  <!-- GIỌNG -->
+  <section id="view-voices" class="view">
+    <div class="row between">
+      <h2>Gói giọng & bộ đọc</h2>
+      <span id="manifestSource" class="chip"></span>
+    </div>
+    <p class="muted">App cài mới không kèm giọng nào. Tải gói nào dùng gói đó, mọi thứ chạy ngay trên máy, không cần mạng khi nghe. Trong app iOS, việc tải tiếp tục ngay cả khi khoá máy.</p>
+    <div id="packList"></div>
+    <h3>Giọng VieNeu (cần tải gói Core trước)</h3>
+    <div id="voiceList" class="grid"></div>
+  </section>
+
+  <!-- KIỂM TRA ĐỌC -->
+  <section id="view-lab" class="view">
+    <h2>Kiểm tra cách đọc</h2>
+    <p class="muted">Dán một câu vào đây để xem máy sẽ đọc thành gì — dùng để kiểm chứng độ chuẩn xác của bộ chuẩn hoá tiếng Việt.</p>
+    <textarea id="labInput" rows="4" class="textarea">Ngày 25/12/2023, PGS.TS. Nguyễn Văn A đo huyết áp 120/80 mmHg, cho uống 5 mg lúc 15h30. Tổng tiền 1.250,75 đồng.</textarea>
+    <button id="labRun" class="btn primary">Xem cách đọc</button>
+    <pre id="labOutput" class="lab-out"></pre>
+    <h3>Chẩn đoán máy</h3>
+    <button id="diagRun" class="btn">Chạy chẩn đoán</button>
+    <pre id="diagOutput" class="lab-out"></pre>
+  </section>
+</main>
+
+<!-- THANH PHÁT -->
+<footer id="playerBar" class="player hidden">
+  <div class="player-info">
+    <div id="playerTitle" class="player-title">—</div>
+    <div id="playerSentence" class="player-sentence">—</div>
+  </div>
+  <div class="player-controls">
+    <select id="voiceSelect" class="select small"></select>
+    <button id="prevBtn" class="icon-btn" title="Câu trước">⏮</button>
+    <button id="playBtn" class="icon-btn big" title="Nghe / dừng">▶</button>
+    <button id="nextBtn" class="icon-btn" title="Câu sau">⏭</button>
+    <select id="speedSelect" class="select small">
+      <option value="0.75">0.75×</option><option value="1" selected>1×</option>
+      <option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+    </select>
+    <select id="sleepSelect" class="select small">
+      <option value="off">Không hẹn giờ</option><option value="chapter">Hết chương</option>
+      <option value="15">15 phút</option><option value="30">30 phút</option><option value="60">60 phút</option>
+    </select>
+  </div>
+  <div id="playerProgress" class="player-progress"></div>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

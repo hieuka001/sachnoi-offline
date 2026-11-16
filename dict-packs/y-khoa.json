@@ -1,0 +1,9 @@
+{
+  "id": "y-khoa", "name": "Từ điển Y khoa", "version": "1.0.0",
+  "description": "Cách đọc thuật ngữ/viết tắt y khoa thường gặp trong sách y học.",
+  "entries": {
+    "ĐTĐ": "đái tháo đường", "THA": "tăng huyết áp", "BN": "bệnh nhân",
+    "SpO2": "sp o hai", "mmHg": "mi li mét thủy ngân", "XQ": "ích quang",
+    "ĐT": "điện tâm", "ECG": "điện tâm đồ", "HIV": "hát i vê"
+  }
+}

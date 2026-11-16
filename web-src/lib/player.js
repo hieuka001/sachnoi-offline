@@ -1,0 +1,204 @@
+// player.js — Bộ phát nghe sách: tổng hợp từng câu (prefetch 2 câu), highlight
+// theo câu, phát nền qua <audio> + Media Session (web) và cầu native (iOS).
+// Trong app iOS: giọng VieNeu native. Trên trình duyệt (dev): rơi về giọng hệ thống.
+
+import { prepareForSpeech } from "../text-engine/index.js";
+
+export const native = () => window.Capacitor?.Plugins?.SachNoiBridge ?? null;
+export const isNative = () => !!window.Capacitor?.isNativePlatform?.();
+
+export class Player {
+  constructor({ onSentence, onState, onProgress } = {}) {
+    this.onSentence = onSentence || (() => {});
+    this.onState = onState || (() => {});
+    this.onProgress = onProgress || (() => {});
+    this.audio = new Audio();
+    this.audio.preload = "auto";
+    this.audio.addEventListener("ended", () => this.handleEnded());
+    this.sentences = [];
+    this.index = -1;
+    this.playing = false;
+    this.voice = "default";
+    this.speed = 1;
+    this.cache = new Map(); // idx -> objectURL (giữ tối đa 6 câu gần nhất)
+    this.sleep = null; // {type:'minutes', at:timestamp} | {type:'chapter'}
+    this.book = null;
+    this._synthSeq = 0;
+    this._wireNativeEvents();
+  }
+
+  /** Dựng danh sách câu cho cả sách (theo chương), áp từ điển cá nhân của sách. */
+  async load(book, extracted, bookDict = {}) {
+    this.stop();
+    this.book = { id: book.id, title: extracted.title, author: extracted.author };
+    this.sentences = [];
+    const total = extracted.chapters.length;
+    for (let ci = 0; ci < total; ci++) {
+      const ch = extracted.chapters[ci];
+      for (const para of ch.paragraphs) {
+        const { sentences } = prepareForSpeech(para, { bookDict });
+        for (const s of sentences) this.sentences.push({ ...s, chapterIndex: ci, chapterTitle: ch.title });
+      }
+      if (ci % 5 === 0) { this.onProgress(Math.round(((ci + 1) / total) * 100)); await tick(); }
+    }
+    this.onProgress(100);
+    this.index = -1;
+    return this.sentences.length;
+  }
+
+  async play(fromIndex = null) {
+    if (fromIndex !== null) this.index = fromIndex;
+    if (this.index < 0) this.index = 0;
+    if (this.index >= this.sentences.length) return;
+    this.playing = true;
+    this.onState(true);
+    await this.playCurrent();
+  }
+
+  pause() {
+    this.playing = false;
+    this.onState(false);
+    this.audio.pause();
+    if (!isNative()) window.speechSynthesis?.pause();
+    this.pushNowPlaying();
+  }
+
+  async resume() {
+    if (this.index < 0) return this.play(0);
+    this.playing = true;
+    this.onState(true);
+    if (this.audio.src && this.audio.currentTime > 0 && !this.audio.ended) {
+      await this.audio.play().catch(() => this.playCurrent());
+    } else {
+      await this.playCurrent();
+    }
+    this.pushNowPlaying();
+  }
+
+  stop() {
+    this.playing = false;
+    this._synthSeq++;
+    this.audio.pause();
+    this.audio.removeAttribute("src");
+    if (!isNative()) window.speechSynthesis?.cancel();
+    for (const url of this.cache.values()) URL.revokeObjectURL(url);
+    this.cache.clear();
+    native()?.clearNowPlaying?.().catch(() => {});
+    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
+  }
+
+  next() { if (this.index + 1 < this.sentences.length) { this.index++; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); } }
+  prev() { if (this.index > 0) { this.index--; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); } }
+
+  setSleep(mode, minutes = 0) {
+    if (mode === "off") this.sleep = null;
+    else if (mode === "chapter") this.sleep = { type: "chapter" };
+    else this.sleep = { type: "minutes", at: Date.now() + minutes * 60000 };
+  }
+
+  async playCurrent() {
+    const i = this.index;
+    const s = this.sentences[i];
+    if (!s) return;
+    this.onSentence(i, s);
+    this.pushNowPlaying();
+    const seq = ++this._synthSeq;
+    // Prefetch 2 câu tiếp theo (tổng hợp nền trong lúc phát câu hiện tại)
+    this.prefetch(i + 1); this.prefetch(i + 2);
+    try {
+      const url = await this.synthUrl(i);
+      if (seq !== this._synthSeq || !this.playing) return;
+      if (url) {
+        this.audio.src = url;
+        this.audio.playbackRate = this.speed;
+        await this.audio.play();
+      } else {
+        this.speakFallback(s.spoken, seq);
+      }
+    } catch (e) {
+      console.warn("Tổng hợp lỗi, dùng giọng dự phòng:", e);
+      if (seq === this._synthSeq && this.playing) this.speakFallback(s.spoken, seq);
+    }
+  }
+
+  prefetch(i) {
+    if (i >= 0 && i < this.sentences.length && !this.cache.has(i)) {
+      this.synthUrl(i).catch(() => {});
+    }
+  }
+
+  async synthUrl(i) {
+    if (this.cache.has(i)) return this.cache.get(i);
+    const bridge = native();
+    if (!bridge?.ttsSynthesize) return null;
+    const { base64 } = await bridge.ttsSynthesize({ text: this.sentences[i].spoken, voice: this.voice });
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+    this.cache.set(i, url);
+    // Giữ cache gọn: chỉ 6 câu quanh vị trí hiện tại
+    for (const [k, v] of this.cache) if (Math.abs(k - this.index) > 4) { URL.revokeObjectURL(v); this.cache.delete(k); }
+    return url;
+  }
+
+  speakFallback(text, seq) {
+    if (!("speechSynthesis" in window)) { this.handleEnded(); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "vi-VN";
+    u.rate = this.speed;
+    const v = window.speechSynthesis.getVoices().find((x) => x.lang?.startsWith("vi"));
+    if (v) u.voice = v;
+    u.onend = () => { if (seq === this._synthSeq) this.handleEnded(); };
+    u.onerror = () => { if (seq === this._synthSeq) this.handleEnded(); };
+    window.speechSynthesis.speak(u);
+  }
+
+  handleEnded() {
+    if (!this.playing) return;
+    const cur = this.sentences[this.index];
+    if (this.sleep?.type === "minutes" && Date.now() >= this.sleep.at) return this.pause();
+    if (this.sleep?.type === "chapter") {
+      const nxt = this.sentences[this.index + 1];
+      if (!nxt || nxt.chapterIndex !== cur.chapterIndex) return this.pause();
+    }
+    if (this.index + 1 >= this.sentences.length) { this.pause(); this.index = -1; return; }
+    this.index++;
+    this.playCurrent();
+  }
+
+  pushNowPlaying() {
+    const s = this.sentences[this.index];
+    if (!s || !this.book) return;
+    const title = this.book.title, author = this.book.author || "", chapter = s.chapterTitle || "";
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: chapter || title, artist: author || title, album: title });
+      navigator.mediaSession.playbackState = this.playing ? "playing" : "paused";
+      navigator.mediaSession.setActionHandler("play", () => this.resume());
+      navigator.mediaSession.setActionHandler("pause", () => this.pause());
+      navigator.mediaSession.setActionHandler("nexttrack", () => this.next());
+      navigator.mediaSession.setActionHandler("previoustrack", () => this.prev());
+    }
+    native()?.setNowPlaying?.({
+      title, author, chapter,
+      elapsed: this.index, duration: this.sentences.length, isPlaying: this.playing,
+    }).catch(() => {});
+  }
+
+  _wireNativeEvents() {
+    const bridge = native();
+    if (!bridge?.addListener) return;
+    bridge.addListener("remoteCommand", ({ command }) => {
+      if (command === "play") this.resume();
+      else if (command === "pause") this.pause();
+      else if (command === "toggle") this.playing ? this.pause() : this.resume();
+      else if (command === "next") this.next();
+      else if (command === "prev") this.prev();
+    });
+    bridge.addListener("audioInterruption", ({ phase, shouldResume }) => {
+      if (phase === "began") { this._wasPlaying = this.playing; if (this.playing) this.pause(); }
+      else if (phase === "ended" && shouldResume && this._wasPlaying) this.resume();
+    });
+  }
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 0));

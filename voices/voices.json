@@ -1,0 +1,362 @@
+{
+  "version": "1.0.0",
+  "packs": [
+    {
+      "id": "vieneu-turbo-int8",
+      "name": "Bộ đọc VieNeu Chuẩn (int8, 48kHz)",
+      "engine": "vieneu",
+      "status": "available",
+      "description": "Tải 1 lần khoảng 261MB — sau đó dùng được cả 25 giọng VieNeu Bắc/Trung/Nam, bấm giọng nào nghe giọng đó ngay. Chất lượng tiếng Việt tốt nhất cho điện thoại, chạy hoàn toàn offline.",
+      "files": [
+        {
+          "name": "config.json",
+          "size": 2152,
+          "sha256": "a9f8d9c4b4736448ab355d1a98cfe48f5e39aecf2916c37b0806c228612e9a2d",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/config.json"
+        },
+        {
+          "name": "heads.bin",
+          "size": 52217860,
+          "sha256": "c01eac0e461417e110f437caa4b6097bf354631b1a66b88700e7a15a15c41d8f",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/heads.bin"
+        },
+        {
+          "name": "heads.json",
+          "size": 470,
+          "sha256": "282a46b0cf37d0fa64e88dc23723d7240a706eef5b059031f8922eddfc5ff0ac",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/heads.json"
+        },
+        {
+          "name": "moss_audio_tokenizer_decode_full.onnx",
+          "size": 681902,
+          "sha256": "0fbbafe3fd4afa2a019af5c5ced204af6e2d1db044fa40f021525d2aee95b4ac",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/moss_audio_tokenizer_decode_full.onnx"
+        },
+        {
+          "name": "moss_audio_tokenizer_decode_shared.data",
+          "size": 44198912,
+          "sha256": "e69d52e0f4e84ca27850557ee54face46632d3a5a16c89bd246c7c408466dcad",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/moss_audio_tokenizer_decode_shared.data"
+        },
+        {
+          "name": "sea_g2p.bin",
+          "size": 62829820,
+          "sha256": "4346e690d0711ebc5231e7a42c5c88aaf6e40377e894b4617c018fd81c6f4096",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/sea_g2p.bin"
+        },
+        {
+          "name": "tokenizer.json",
+          "size": 22320,
+          "sha256": "6cc6bcbe380b8c37bd9f2514e37c5dfa3e00e122c6e3125dae5c4afe48e39158",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/tokenizer.json"
+        },
+        {
+          "name": "vieneu_acoustic_cached.onnx",
+          "size": 7207223,
+          "sha256": "f631e3387c788c3d8b9a5ac5df94952af5bc4c4d1049ff8a751e76a246fff2d4",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/vieneu_acoustic_cached.onnx"
+        },
+        {
+          "name": "vieneu_backbone_shared.data",
+          "size": 103891968,
+          "sha256": "bb683925f7c8d826fadca4f8a0252ae4d5fc5b7837c14f6857e18f4c6666588d",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/vieneu_backbone_shared.data"
+        },
+        {
+          "name": "vieneu_decode_step.onnx",
+          "size": 1062040,
+          "sha256": "2c5b30bd8ccb751c58d651f44c074df10c4113efd08719adaa8e3dec6a6ce2ca",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/vieneu_decode_step.onnx"
+        },
+        {
+          "name": "vieneu_prefill.onnx",
+          "size": 1090823,
+          "sha256": "c6a80dabf67c820de798f8deb7d4e0f37d81b5d76e33fbe20ab5a67f2d371f4e",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/vieneu_prefill.onnx"
+        },
+        {
+          "name": "voices_v3_turbo.json",
+          "size": 180332,
+          "sha256": "e1f13cd2c2e0d29fdab5e15bfd7a30f3d7b768e6132bb43dd2b853f8efefdce9",
+          "url": "https://github.com/hieuka001/sachnoi-offline/releases/download/core-vieneu-turbo-int8-v1/voices_v3_turbo.json"
+        }
+      ]
+    },
+    {
+      "id": "vieneu-turbo-fp32",
+      "name": "Bộ đọc VieNeu MAX (fp32, 48kHz)",
+      "engine": "vieneu",
+      "status": "coming-soon",
+      "description": "Bản chất lượng cao nhất (khoảng 530MB), cho máy mạnh. Đang đóng gói — sẽ mở tải ở bản cập nhật danh mục tiếp theo.",
+      "files": []
+    },
+    {
+      "id": "vieneu-nano",
+      "name": "Bộ đọc VieNeu Nano nhẹ (24kHz)",
+      "engine": "vieneu-nano",
+      "status": "coming-soon",
+      "description": "Bản nhẹ, nhanh hơn khoảng 3 lần, 11 giọng — cho máy yếu. Đang đóng gói.",
+      "files": []
+    },
+    {
+      "id": "piper-vi-vais1000",
+      "name": "Giọng nhẹ Piper tiếng Việt (vais1000)",
+      "engine": "piper",
+      "status": "coming-soon",
+      "description": "Giọng độc lập khoảng 61MB, không cần tải bộ đọc chung. Đang kiểm tra giấy phép trước khi phát hành.",
+      "files": []
+    }
+  ],
+  "voices": [
+    {
+      "id": "Adam bựa",
+      "name": "Adam bựa",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Trúc Ly",
+      "name": "Trúc Ly",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Thiện Minh",
+      "name": "Thiện Minh",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Đọc truyện",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Mai Anh",
+      "name": "Mai Anh",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Tin tức",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Hải Đăng",
+      "name": "Hải Đăng",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Thùy Dung",
+      "name": "Thùy Dung",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nữ",
+      "character": "Tin tức",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Thiền Tâm Đức",
+      "name": "Thiền Tâm Đức",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Đọc truyện",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Ngọc Huyền",
+      "name": "Ngọc Huyền",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Quang Sơn",
+      "name": "Quang Sơn",
+      "engine": "vieneu",
+      "region": "Miền Trung",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Ngọc Trân",
+      "name": "Ngọc Trân",
+      "engine": "vieneu",
+      "region": "Miền Trung",
+      "gender": "Nữ",
+      "character": "Tự nhiên",
+      "pick": true,
+      "sample": ""
+    },
+    {
+      "id": "Minh Đức",
+      "name": "Minh Đức",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tin tức",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Phạm Tuyên",
+      "name": "Phạm Tuyên",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Thái Sơn",
+      "name": "Thái Sơn",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nam",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Xuân Vĩnh",
+      "name": "Xuân Vĩnh",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Thanh Bình",
+      "name": "Thanh Bình",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Ngọc Linh",
+      "name": "Ngọc Linh",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Đoan Trang",
+      "name": "Đoan Trang",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Tự nhiên",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Thục Đoan",
+      "name": "Thục Đoan",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nữ",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Minh Triết",
+      "name": "Minh Triết",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nam",
+      "character": "Tin tức",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Mỹ Duyên",
+      "name": "Mỹ Duyên",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nữ",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Quỳnh Anh",
+      "name": "Quỳnh Anh",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nữ",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Đức Trí",
+      "name": "Đức Trí",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nam",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Kim Thanh",
+      "name": "Kim Thanh",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nữ",
+      "character": "Đọc truyện",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Adam",
+      "name": "Adam",
+      "engine": "vieneu",
+      "region": "Miền Nam",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": false,
+      "sample": ""
+    },
+    {
+      "id": "Quốc Tuấn",
+      "name": "Quốc Tuấn",
+      "engine": "vieneu",
+      "region": "Miền Bắc",
+      "gender": "Nam",
+      "character": "Tự nhiên",
+      "pick": false,
+      "sample": ""
+    }
+  ]
+}

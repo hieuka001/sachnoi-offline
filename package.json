@@ -1,0 +1,23 @@
+{
+  "dependencies": {
+    "@capacitor/core": "^6.2.3",
+    "@capacitor/ios": "^6.2.3",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^4.7.76",
+    "sachnoi-bridge": "file:plugins/sachnoi-bridge"
+  },
+  "description": "Sách Nói Offline — app đọc PDF/EPUB offline, TTS tiếng Việt tải giọng theo nhu cầu từ GitHub Releases",
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.3"
+  },
+  "name": "sachnoi-offline",
+  "private": true,
+  "scripts": {
+    "build:web": "node tools/build-web.mjs",
+    "check:manifest": "node tools/check-manifest.mjs",
+    "sync:ios": "npm run build:web && npx cap sync ios",
+    "test": "node --test tests/*.test.js"
+  },
+  "type": "module",
+  "version": "1.0.0"
+}

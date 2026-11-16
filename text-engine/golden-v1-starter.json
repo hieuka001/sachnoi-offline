@@ -1,0 +1,206 @@
+{
+  "cases": [
+    {
+      "expected": "có hai mươi mốt người.",
+      "group": "so-bien-am",
+      "input": "Có 21 người."
+    },
+    {
+      "expected": "có một trăm lẻ một người.",
+      "group": "so-bien-am",
+      "input": "Có 101 người."
+    },
+    {
+      "expected": "có một trăm mười lăm người.",
+      "group": "so-bien-am",
+      "input": "Có 115 người."
+    },
+    {
+      "expected": "có một trăm lẻ năm người.",
+      "group": "so-bien-am",
+      "input": "Có 105 người."
+    },
+    {
+      "expected": "giá một triệu không trăm lẻ năm nghìn đồng.",
+      "group": "so-bien-am",
+      "input": "Giá 1.005.000 đồng."
+    },
+    {
+      "expected": "tổng mười lăm triệu bảy trăm đồng.",
+      "group": "so-bien-am",
+      "input": "Tổng 15.000.700 đồng."
+    },
+    {
+      "expected": "năm hai mươi tư tuổi.",
+      "group": "so-bien-am",
+      "input": "Năm 24 tuổi."
+    },
+    {
+      "expected": "năm mười bốn tuổi.",
+      "group": "so-bien-am",
+      "input": "Năm 14 tuổi."
+    },
+    {
+      "expected": "nặng một phẩy năm ki lô gam.",
+      "group": "thap-phan",
+      "input": "Nặng 1,5 kg."
+    },
+    {
+      "expected": "tổng một nghìn hai trăm năm mươi phẩy bảy mươi lăm đồng.",
+      "group": "thap-phan",
+      "input": "Tổng 1.250,75 đồng."
+    },
+    {
+      "expected": "điểm thi tám phẩy năm điểm.",
+      "group": "thap-phan",
+      "input": "Điểm thi 8.5 điểm."
+    },
+    {
+      "expected": "bản hai chấm không chấm năm mới.",
+      "group": "thap-phan",
+      "input": "Bản 2.0.5 mới."
+    },
+    {
+      "expected": "ngày hai mươi lăm tháng mười hai năm hai nghìn không trăm hai mươi ba.",
+      "group": "ngay-gio",
+      "input": "Ngày 25/12/2023."
+    },
+    {
+      "expected": "lúc mười lăm giờ ba mươi.",
+      "group": "ngay-gio",
+      "input": "Lúc 15h30."
+    },
+    {
+      "expected": "thế kỷ mười sáu.",
+      "group": "ngay-gio",
+      "input": "Thế kỷ XVI."
+    },
+    {
+      "expected": "từ tám đến mười giờ.",
+      "group": "ngay-gio",
+      "input": "Từ 8–10 giờ."
+    },
+    {
+      "expected": "nhiệt độ ba mươi bảy phẩy năm độ xê.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Nhiệt độ 37,5°C."
+    },
+    {
+      "expected": "huyết áp một trăm hai mươi trên tám mươi mi li mét thủy ngân.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Huyết áp 120/80 mmHg."
+    },
+    {
+      "expected": "uống năm mi li gam mỗi ngày.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Uống 5 mg mỗi ngày."
+    },
+    {
+      "expected": "sp o hai chín mươi tám phần trăm.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "SpO2 98%."
+    },
+    {
+      "expected": "phó giáo sư tiến sĩ nguyễn văn a khám bệnh.",
+      "group": "viet-tat",
+      "input": "PGS.TS. Nguyễn Văn A khám bệnh."
+    },
+    {
+      "expected": "ủy ban nhân dân thành phố hồ chí minh.",
+      "group": "viet-tat",
+      "input": "UBND TP. Hồ Chí Minh."
+    },
+    {
+      "expected": "học sinh trung học phổ thông và trung học cơ sở.",
+      "group": "viet-tat",
+      "input": "Học sinh THPT và THCS."
+    },
+    {
+      "expected": "công ty trách nhiệm hữu hạn một thành viên.",
+      "group": "viet-tat",
+      "input": "Công ty TNHH một thành viên."
+    },
+    {
+      "expected": "chia hai phần ba cho em.",
+      "group": "phan-so-ti-so",
+      "input": "Chia 2/3 cho em."
+    },
+    {
+      "expected": "tỉ số hai không.",
+      "group": "phan-so-ti-so",
+      "input": "Tỉ số 2-0."
+    },
+    {
+      "expected": "khoảng ba đến năm ngày.",
+      "group": "phan-so-ti-so",
+      "input": "Khoảng 3–5 ngày."
+    },
+    {
+      "expected": "gọi không chín không ba, một hai ba, bốn năm sáu.",
+      "group": "dien-thoai-ma-so",
+      "input": "Gọi 0903 123 456."
+    },
+    {
+      "expected": "nước là hát hai ô.",
+      "group": "toan-ky-hieu",
+      "input": "Nước là H2O."
+    },
+    {
+      "expected": "diện tích ích bình phương này.",
+      "group": "toan-ky-hieu",
+      "input": "Diện tích x² này."
+    },
+    {
+      "expected": "bệnh covid mười chín lây nhanh.",
+      "group": "anh-viet",
+      "input": "Bệnh COVID-19 lây nhanh."
+    },
+    {
+      "expected": "theo tổ chức y tế thế giới khuyến cáo.",
+      "group": "anh-viet",
+      "input": "Theo WHO khuyến cáo."
+    },
+    {
+      "expected": "năm một nghìn chín trăm bốn mươi lăm, cách mạng thành công.",
+      "group": "nam-lich-su",
+      "input": "Năm 1945, cách mạng thành công."
+    },
+    {
+      "expected": "về thứ ba chung cuộc.",
+      "group": "so-thu-tu",
+      "input": "Về thứ 3 chung cuộc."
+    },
+    {
+      "expected": "đạt hạng nhất toàn trường.",
+      "group": "so-thu-tu",
+      "input": "Đạt hạng 1 toàn trường."
+    },
+    {
+      "expected": "chương bốn bắt đầu.",
+      "group": "chuong-muc",
+      "input": "Chương IV bắt đầu."
+    },
+    {
+      "expected": "anh đi, về nhà.",
+      "group": "pdf-rac",
+      "input": "Anh đi , về nhà ."
+    },
+    {
+      "expected": "từ chuyển bị ngắt.",
+      "group": "pdf-rac",
+      "input": "Từ chuy- ển bị ngắt."
+    },
+    {
+      "expected": "anh về rồi à?",
+      "group": "hoi-thoai",
+      "input": "- Anh về rồi à?"
+    },
+    {
+      "expected": "nó có hai triệu mốt trong túi.",
+      "group": "tien-noi",
+      "input": "Nó có 2 triệu mốt trong túi."
+    }
+  ],
+  "note": "Bộ khởi động 40 câu mẫu — bản đầy đủ mở rộng lên 1.000 câu theo quota Phần C1 của THIET-KE-FULL.md. Mỗi câu: input -> expected (text sau chuẩn hoá, viết thường để đưa vào TTS).",
+  "version": "1.0-starter"
+}

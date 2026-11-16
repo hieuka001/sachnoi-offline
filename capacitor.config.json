@@ -1,0 +1,15 @@
+{
+  "appId": "com.hieuka001.sachnoi",
+  "appName": "Sách Nói Offline",
+  "webDir": "web",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#101418"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": false
+    }
+  }
+}

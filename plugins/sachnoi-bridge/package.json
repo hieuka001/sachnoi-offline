@@ -1,0 +1,15 @@
+{
+  "name": "sachnoi-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SachNoi iOS bridge: VieNeu TTS (downloaded packs), background audio, background downloads.",
+  "files": [
+    "ios/Plugin",
+    "SachnoiBridge.podspec"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

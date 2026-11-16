@@ -1,0 +1,205 @@
+import Foundation
+import Capacitor
+import AVFoundation
+
+/// SachNoiBridge — cầu native của app Sách Nói Offline:
+/// - TTS VieNeu nội bộ (giọng lấy từ gói đã tải, xem PackStore)
+/// - Tải gói nền (core/giọng) qua BackgroundDownloader + kiểm SHA-256
+/// - Nghe nền: Now Playing + remote command + ngắt quãng (BackgroundAudio)
+/// - saveFile: xuất file qua khay chia sẻ iOS (WKWebView không tự tải blob được)
+@objc(SachNoiBridgePlugin)
+public class SachNoiBridgePlugin: CAPPlugin {
+
+    override public func load() {
+        PackStore.ensureRoot()
+        TtsServer.shared.start()
+        lockWebView(attempt: 0)
+        // Chuyển sự kiện native -> web
+        BackgroundAudio.shared.onRemoteCommand = { [weak self] cmd in
+            self?.notifyListeners("remoteCommand", data: ["command": cmd])
+        }
+        BackgroundAudio.shared.onInterruption = { [weak self] phase, shouldResume in
+            self?.notifyListeners("audioInterruption", data: ["phase": phase, "shouldResume": shouldResume])
+        }
+        BackgroundAudio.shared.onRoutePause = { [weak self] in
+            self?.notifyListeners("remoteCommand", data: ["command": "pause"])
+        }
+        let dl = BackgroundDownloader.shared
+        dl.onProgress = { [weak self] packId, received, total in
+            self?.notifyListeners("packDownloadProgress", data: ["packId": packId, "received": received, "total": total])
+        }
+        dl.onFileFinished = { [weak self] packId, name, error in
+            self?.notifyListeners("packFileFinished", data: ["packId": packId, "name": name, "error": error ?? ""])
+        }
+        dl.onPackFinished = { [weak self] packId in
+            // Gói core vừa tải xong -> nạp engine ngay để bấm Nghe là có tiếng
+            if packId.hasPrefix("vieneu-") { TtsServer.shared.warmup() }
+            self?.notifyListeners("packDownloadFinished", data: ["packId": packId])
+        }
+    }
+
+    @objc public static func startTtsEngine() {
+        TtsServer.shared.start()
+    }
+
+    private func lockWebView(attempt: Int) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let webView = self.bridge?.webView {
+                webView.scrollView.bounces = false
+                webView.scrollView.alwaysBounceVertical = false
+                webView.scrollView.alwaysBounceHorizontal = false
+                webView.allowsLinkPreview = false
+            } else if attempt < 10 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.lockWebView(attempt: attempt + 1) }
+            }
+        }
+    }
+
+    @objc func getInfo(_ call: CAPPluginCall) {
+        let info = Bundle.main.infoDictionary
+        call.resolve([
+            "version": info?["CFBundleShortVersionString"] as? String ?? "0",
+            "build": info?["CFBundleVersion"] as? String ?? "0",
+            "platform": "ios",
+            "ttsNative": true,
+            "backgroundAudio": true,
+            "backgroundDownloads": true,
+            "coreInstalled": PackStore.vieneuAssetsURL() != nil,
+            "manifestUpdateAvailable": BackgroundTasks.availableManifestVersion() ?? "",
+        ])
+    }
+
+    @objc func saveFile(_ call: CAPPluginCall) {
+        guard let name = call.getString("name"), !name.isEmpty,
+              let base64 = call.getString("base64"),
+              let data = Data(base64Encoded: base64) else {
+            call.reject("saveFile needs name + base64"); return
+        }
+        let safeName = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "_")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+        do { try data.write(to: url, options: .atomic) } catch {
+            call.reject("Cannot write temp file: \(error.localizedDescription)"); return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let presenter = self?.bridge?.viewController else { call.reject("No presenter"); return }
+            let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let popover = activity.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+            }
+            presenter.present(activity, animated: true) { call.resolve(["saved": true]) }
+        }
+    }
+
+    // MARK: - TTS
+    @objc func ttsVoices(_ call: CAPPluginCall) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let store = try TtsServer.shared.getVoiceStore()
+                call.resolve(["voices": store.presets.map { ["id": $0.name, "name": $0.label, "language": "vi"] }])
+            } catch {
+                call.reject("Chưa tải gói core VieNeu hoặc gói lỗi: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @objc func ttsSynthesize(_ call: CAPPluginCall) {
+        guard let text = call.getString("text"), !text.isEmpty else { call.reject("ttsSynthesize needs text"); return }
+        let voice = call.getString("voice") ?? "default"
+        // Đang tổng hợp mà app vào nền: xin thêm thời gian để không cắt giữa câu
+        BackgroundAudio.shared.beginBackgroundAssertion(name: "SachNoiSynthesize")
+        DispatchQueue.global(qos: .userInitiated).async {
+            defer { BackgroundAudio.shared.endBackgroundAssertion() }
+            do {
+                let wav = try TtsServer.shared.synthesizeSync(text: text, voice: voice)
+                call.resolve(["base64": wav.base64EncodedString()])
+            } catch {
+                call.reject("Tổng hợp thất bại: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @objc func ttsDiagnostics(_ call: CAPPluginCall) {
+        var info = TtsServer.shared.diagnostics()
+        info["shellVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        info["packs"] = PackStore.installedPacks().map { "\($0["id"] ?? "?"):\($0["bytes"] ?? 0)" }.joined(separator: ",")
+        call.resolve(info)
+    }
+
+    // MARK: - Gói tải nền (core + giọng)
+    @objc func downloadPack(_ call: CAPPluginCall) {
+        guard let packId = call.getString("packId"), !packId.isEmpty,
+              let files = call.getArray("files") as? [[String: Any]], !files.isEmpty else {
+            call.reject("downloadPack needs packId + files"); return
+        }
+        BackgroundDownloader.shared.download(packId: packId, files: files)
+        call.resolve(["started": true])
+    }
+
+    @objc func cancelPackDownload(_ call: CAPPluginCall) {
+        guard let packId = call.getString("packId") else { call.reject("needs packId"); return }
+        BackgroundDownloader.shared.cancel(packId: packId)
+        call.resolve(["cancelled": true])
+    }
+
+    @objc func packStatus(_ call: CAPPluginCall) {
+        guard let packId = call.getString("packId") else { call.reject("needs packId"); return }
+        let dir = PackStore.packURL(packId)
+        let exists = FileManager.default.fileExists(atPath: dir.path)
+        call.resolve(["installed": exists, "bytes": exists ? PackStore.directorySize(dir) : 0])
+    }
+
+    @objc func listInstalledPacks(_ call: CAPPluginCall) {
+        call.resolve(["packs": PackStore.installedPacks()])
+    }
+
+    @objc func deletePack(_ call: CAPPluginCall) {
+        guard let packId = call.getString("packId") else { call.reject("needs packId"); return }
+        do { try PackStore.deletePack(packId); call.resolve(["deleted": true]) }
+        catch { call.reject(error.localizedDescription) }
+    }
+
+    @objc func verifyPack(_ call: CAPPluginCall) {
+        guard let packId = call.getString("packId"),
+              let files = call.getArray("files") as? [[String: Any]] else {
+            call.reject("verifyPack needs packId + files"); return
+        }
+        DispatchQueue.global(qos: .utility).async {
+            call.resolve(["files": PackStore.verify(packId: packId, files: files)])
+        }
+    }
+
+    // MARK: - Nghe nền: Now Playing
+    @objc func setNowPlaying(_ call: CAPPluginCall) {
+        BackgroundAudio.shared.setNowPlaying(
+            title: call.getString("title") ?? "",
+            author: call.getString("author") ?? "",
+            chapter: call.getString("chapter") ?? "",
+            elapsed: call.getDouble("elapsed") ?? 0,
+            duration: call.getDouble("duration") ?? 0,
+            isPlaying: call.getBool("isPlaying") ?? false)
+        call.resolve()
+    }
+
+    @objc func updatePlaybackState(_ call: CAPPluginCall) {
+        BackgroundAudio.shared.updatePlayback(isPlaying: call.getBool("isPlaying") ?? false,
+                                              elapsed: call.getDouble("elapsed") ?? 0)
+        call.resolve()
+    }
+
+    @objc func clearNowPlaying(_ call: CAPPluginCall) {
+        BackgroundAudio.shared.clearNowPlaying()
+        call.resolve()
+    }
+
+    @objc func scheduleBackgroundTasks(_ call: CAPPluginCall) {
+        BackgroundTasks.scheduleAll()
+        call.resolve(["scheduled": true])
+    }
+
+    @objc func markManifestSeen(_ call: CAPPluginCall) {
+        if let v = call.getString("version") { BackgroundTasks.markManifestSeen(v) }
+        call.resolve()
+    }
+}
