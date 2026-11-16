@@ -56,8 +56,15 @@ export const store = {
   async getProgress(bookId) {
     return (await tx("progress", "readonly", (s) => s.get(bookId))) || null;
   },
+  // MERGE với bản ghi cũ — không ghi đè trắng (bản 1.0.0 từng làm mất extractedCache
+  // mỗi lần lưu vị trí nghe, khiến mở lại sách phải trích lại từ đầu).
   async setProgress(bookId, data) {
-    await tx("progress", "readwrite", (s) => s.put({ bookId, ...data, updatedAt: Date.now() }));
+    const prev = (await tx("progress", "readonly", (s) => s.get(bookId))) || {};
+    await tx("progress", "readwrite", (s) => s.put({ ...prev, bookId, ...data, updatedAt: Date.now() }));
+  },
+  async listProgress() {
+    const all = await tx("progress", "readonly", (s) => s.getAll());
+    return all || [];
   },
   async getBookDict(bookId) {
     const row = await tx("bookDict", "readonly", (s) => s.get(bookId));

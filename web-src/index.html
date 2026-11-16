@@ -12,6 +12,7 @@
   <div class="brand">Sách Nói Offline</div>
   <nav class="tabs">
     <button data-tab="library" class="tab active">Sách</button>
+    <button data-tab="history" class="tab">Lịch sử</button>
     <button data-tab="voices" class="tab">Giọng</button>
     <button data-tab="lab" class="tab">Kiểm tra đọc</button>
   </nav>
@@ -40,6 +41,13 @@
     <h2 id="readerTitle"></h2>
     <p id="scanWarn" class="warn hidden">Sách này có vẻ là bản scan (ít chữ trích được) — độ chính xác khi đọc phụ thuộc chất lượng OCR, hiện app đọc phần chữ trích được.</p>
     <div id="readerBody" class="reader"></div>
+  </section>
+
+  <!-- LỊCH SỬ NGHE -->
+  <section id="view-history" class="view">
+    <h2>Lịch sử nghe</h2>
+    <div id="historyList"></div>
+    <p id="emptyHistory" class="muted">Chưa nghe cuốn nào. Mở một cuốn sách và bấm nghe — app sẽ nhớ tới từng câu.</p>
   </section>
 
   <!-- GIỌNG -->

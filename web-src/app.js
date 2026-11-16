@@ -16,10 +16,12 @@ document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click",
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
   const tab = btn.dataset.tab;
   $("view-library").classList.toggle("active", tab === "library");
+  $("view-history").classList.toggle("active", tab === "history");
   $("view-voices").classList.toggle("active", tab === "voices");
   $("view-lab").classList.toggle("active", tab === "lab");
   $("view-reader").classList.remove("active");
   if (tab === "voices") renderVoices();
+  if (tab === "history") renderHistory();
 }));
 
 // ---------- Player ----------
@@ -28,7 +30,12 @@ state.player = new Player({
     $("playerSentence").textContent = s.original;
     $("playerProgress").textContent = `Câu ${idx + 1} / ${state.player.sentences.length} · ${s.chapterTitle || ""}`;
     highlightSentence(idx);
-    store.setProgress(state.book.id, { sentenceIndex: idx }).catch(() => {});
+    store.setProgress(state.book.id, {
+      sentenceIndex: idx,
+      totalSentences: state.player.sentences.length,
+      chapterTitle: s.chapterTitle || "",
+      lastListenedAt: Date.now(),
+    }).catch(() => {});
   },
   onState: (playing) => { $("playBtn").textContent = playing ? "⏸" : "▶"; },
   onProgress: (pct) => { $("playerProgress").textContent = `Đang chuẩn bị sách… ${pct}%`; },
@@ -51,19 +58,33 @@ $("sleepSelect").addEventListener("change", (e) => {
 $("voiceSelect").addEventListener("change", (e) => { state.player.voice = e.target.value; state.player.cache.clear(); });
 
 // ---------- Thư viện ----------
+function progressPct(pr) {
+  if (!pr || !pr.totalSentences) return 0;
+  return Math.min(100, Math.round(((pr.sentenceIndex + 1) / pr.totalSentences) * 100));
+}
+
 async function renderLibrary() {
   const books = await store.listBooks();
+  const progressMap = new Map((await store.listProgress()).map((pr) => [pr.bookId, pr]));
   $("emptyLib").style.display = books.length ? "none" : "block";
-  $("bookGrid").innerHTML = books.map((b) => `
+  $("bookGrid").innerHTML = books.map((b) => {
+    const pr = progressMap.get(b.id);
+    const pct = progressPct(pr);
+    return `
     <div class="card">
       <h4>${escapeHtml(b.title)}</h4>
       <p class="muted">${escapeHtml(b.author || "")} ${b.format?.toUpperCase() || ""} · ${b.chapters || "?"} chương/phần</p>
+      ${pr?.totalSentences ? `<progress value="${pct}" max="100" style="width:100%"></progress>
+      <p class="muted tnum">Đã nghe ${pct}% · câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}</p>` : ""}
       <div class="row">
+        ${pct > 0 && pct < 100 ? `<button class="btn jade" data-continue="${b.id}">▶ Nghe tiếp</button>` : ""}
         <button class="btn primary" data-open="${b.id}">Đọc & nghe</button>
         <button class="btn danger" data-del="${b.id}">Xoá</button>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   $("bookGrid").querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.open)));
+  $("bookGrid").querySelectorAll("[data-continue]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.continue, true)));
   $("bookGrid").querySelectorAll("[data-del]").forEach((el) => el.addEventListener("click", async () => {
     if (confirm("Xoá sách này khỏi máy?")) { await store.deleteBook(el.dataset.del); renderLibrary(); }
   }));
@@ -92,7 +113,7 @@ $("fileInput").addEventListener("change", async (e) => {
 });
 
 // ---------- Đọc ----------
-async function openBook(id) {
+async function openBook(id, autoplay = false) {
   const books = await store.listBooks();
   const meta = books.find((b) => b.id === id);
   if (!meta) return;
@@ -121,6 +142,32 @@ async function openBook(id) {
   $("playerBar").classList.remove("hidden");
   $("playerTitle").textContent = extracted.title;
   if (startSentence > 0) $("playerProgress").textContent = `Đã nghe tới câu ${startSentence + 1} — bấm ▶ để nghe tiếp.`;
+  if (autoplay) state.player.play(startSentence);
+}
+
+// ---------- Lịch sử nghe ----------
+async function renderHistory() {
+  const books = await store.listBooks();
+  const byId = new Map(books.map((b) => [b.id, b]));
+  const items = (await store.listProgress())
+    .filter((pr) => pr.totalSentences && byId.has(pr.bookId))
+    .sort((a, b) => (b.lastListenedAt || b.updatedAt || 0) - (a.lastListenedAt || a.updatedAt || 0));
+  $("emptyHistory").style.display = items.length ? "none" : "block";
+  $("historyList").innerHTML = items.map((pr) => {
+    const b = byId.get(pr.bookId);
+    const pct = progressPct(pr);
+    const when = pr.lastListenedAt ? new Date(pr.lastListenedAt).toLocaleString("vi-VN") : "";
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="row between"><h4>${escapeHtml(b.title)}</h4><span class="chip ${pct >= 100 ? "ok" : ""}">${pct >= 100 ? "✓ Đã nghe xong" : `Đã nghe ${pct}%`}</span></div>
+      <progress value="${pct}" max="100" style="width:100%"></progress>
+      <p class="muted tnum">Câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}${when ? ` · Nghe gần nhất: ${when}` : ""}</p>
+      <div class="row">
+        ${pct < 100 ? `<button class="btn jade" data-h-continue="${b.id}">▶ Nghe tiếp</button>` : ""}
+        <button class="btn" data-h-open="${b.id}">Mở sách</button>
+      </div></div>`;
+  }).join("");
+  $("historyList").querySelectorAll("[data-h-continue]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.hContinue, true)));
+  $("historyList").querySelectorAll("[data-h-open]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.hOpen)));
 }
 
 function showChapter(ci) {
