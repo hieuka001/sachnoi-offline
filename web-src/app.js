@@ -104,7 +104,9 @@ $("fileInput").addEventListener("change", async (e) => {
     await store.addBook(meta, file);
     // Lưu kèm bản đã trích để mở lại không phải trích lại từ đầu
     await store.setProgress(meta.id, { extractedCache: extracted, sentenceIndex: 0 });
-    $("importStatus").textContent = `Đã thêm “${meta.title}” (${meta.chapters} chương/phần).`;
+    $("importStatus").textContent = extracted.scanned
+      ? `Đã thêm “${meta.title}” — nhưng đây là sách scan (${extracted.pages} trang, chỉ trích được ${extracted.totalChars ?? 0} ký tự): bản này chưa có OCR nên chưa đọc được, mở sách sẽ thấy phần giải thích.`
+      : `Đã thêm “${meta.title}” (${meta.chapters} chương/phần).`;
     renderLibrary();
   } catch (err) {
     $("importStatus").textContent = "Không đọc được file: " + err.message;

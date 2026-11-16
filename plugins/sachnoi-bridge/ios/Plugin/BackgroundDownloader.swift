@@ -1,10 +1,16 @@
 import Foundation
 
 /// BackgroundDownloader — tải gói core/giọng bằng URLSession NỀN.
-/// Đây là một trong các chức năng chạy nền của bản iOS: người dùng bấm tải rồi
-/// khoá máy / chuyển app / thậm chí app bị iOS đóng, hệ thống vẫn tải tiếp và
-/// mở lại app khi tải xong (handleEventsForBackgroundURLSession ở AppDelegate).
-/// Tiến độ + hoàn tất được plugin chuyển tiếp sang web qua sự kiện.
+/// Người dùng bấm tải rồi khoá máy / chuyển app / app bị iOS đóng, hệ thống vẫn
+/// tải tiếp và mở lại app khi xong (handleEventsForBackgroundURLSession).
+///
+/// Độ bền (bản 1.0.2, sau lỗi "Cannot create file" trên máy thật):
+/// - Mỗi task gắn taskDescription "packId|fileName" để app bị mở lại giữa chừng
+///   vẫn nhận ra file thuộc gói nào (bản 1.0.x chỉ lưu trong RAM -> mất là mất file).
+/// - File lỗi: tự thử lại 1 lần trên phiên nền; vẫn lỗi (đặc biệt NSURLError
+///   -3000 CannotCreateFile của tiến trình tải nền) -> tải nốt bằng phiên thường
+///   khi app đang mở, không để người dùng kẹt hẳn.
+/// - Lỗi báo về web kèm tên file + domain + code để chẩn đoán được, không nuốt lỗi.
 public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
     public static let shared = BackgroundDownloader()
     public static var backgroundCompletionHandler: (() -> Void)?
@@ -13,31 +19,34 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
     public var onFileFinished: ((_ packId: String, _ name: String, _ error: String?) -> Void)?
     public var onPackFinished: ((_ packId: String) -> Void)?
 
-    private struct TaskInfo { let packId: String; let name: String; let dest: URL }
+    private struct TaskInfo { let packId: String; let name: String; let dest: URL; let url: URL; var retried: Bool }
     private var taskInfos: [Int: TaskInfo] = [:]
     private var packTotals: [String: Int64] = [:]
-    private var packReceived: [String: Int64] = [:]
     private var packRemainingFiles: [String: Int] = [:]
+    private var lastReportedPct: [String: Int] = [:]
     private let lock = NSLock()
 
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: "com.hieuka001.sachnoi.downloads")
-        config.isDiscretionary = false          // tải ngay, không chờ điều kiện lý tưởng
-        config.sessionSendsLaunchEvents = true  // tải xong khi app bị đóng -> iOS mở lại app
-        config.allowsCellularAccess = true      // web hỏi ý người dùng trước ở tầng giao diện
+        config.isDiscretionary = false
+        config.sessionSendsLaunchEvents = true
+        config.allowsCellularAccess = true
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
-    /// Bắt đầu tải 1 gói: files = [{url, name, size}] — mỗi file là 1 asset riêng
-    /// trên GitHub Releases nên tải đứt đoạn nào nối lại đoạn đó, không cần giải nén.
+    /// Phiên thường (chỉ chạy khi app đang mở) — đường dự phòng khi phiên nền lỗi.
+    private lazy var foregroundSession: URLSession = {
+        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    }()
+
     public func download(packId: String, files: [[String: Any]]) {
         PackStore.ensureRoot()
         let dir = PackStore.packURL(packId)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         lock.lock()
         packTotals[packId] = files.reduce(Int64(0)) { $0 + (($1["size"] as? NSNumber)?.int64Value ?? 0) }
-        packReceived[packId] = PackStore.directorySize(dir)
         packRemainingFiles[packId] = files.count
+        lastReportedPct[packId] = -1
         lock.unlock()
         for f in files {
             guard let urlString = f["url"] as? String, let url = URL(string: urlString),
@@ -46,24 +55,47 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
             if FileManager.default.fileExists(atPath: dest.path),
                let size = f["size"] as? NSNumber,
                ((try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1) == size.intValue {
-                fileDone(packId: packId, name: name, error: nil) // đã có từ lần tải trước
+                fileDone(packId: packId, name: name, error: nil)
                 continue
             }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 600
-            let task = session.downloadTask(with: request)
-            lock.lock(); taskInfos[task.taskIdentifier] = TaskInfo(packId: packId, name: name, dest: dest); lock.unlock()
-            task.resume()
+            startTask(packId: packId, name: name, url: url, dest: dest, foreground: false, retried: false)
         }
     }
 
+    private func startTask(packId: String, name: String, url: URL, dest: URL, foreground: Bool, retried: Bool) {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 600
+        let task = foreground ? foregroundSession.downloadTask(with: request) : session.downloadTask(with: request)
+        task.taskDescription = "\(packId)|\(name)"
+        lock.lock()
+        taskInfos[task.taskIdentifier] = TaskInfo(packId: packId, name: name, dest: dest, url: url, retried: retried)
+        lock.unlock()
+        task.resume()
+    }
+
     public func cancel(packId: String) {
-        session.getAllTasks { tasks in
-            tasks.forEach { task in
-                self.lock.lock(); let info = self.taskInfos[task.taskIdentifier]; self.lock.unlock()
-                if info?.packId == packId { task.cancel() }
+        for s in [session, foregroundSession] {
+            s.getAllTasks { tasks in
+                tasks.forEach { task in
+                    if task.taskDescription?.hasPrefix("\(packId)|") == true { task.cancel() }
+                }
             }
         }
+    }
+
+    private func info(for task: URLSessionTask) -> TaskInfo? {
+        lock.lock(); let cached = taskInfos[task.taskIdentifier]; lock.unlock()
+        if let cached { return cached }
+        // App bị hệ thống mở lại: khôi phục từ taskDescription
+        guard let desc = task.taskDescription, let sep = desc.firstIndex(of: "|") else { return nil }
+        let packId = String(desc[..<sep])
+        let name = String(desc[desc.index(after: sep)...])
+        let dir = PackStore.packURL(packId)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let url = task.originalRequest?.url else { return nil }
+        let recovered = TaskInfo(packId: packId, name: name, dest: dir.appendingPathComponent(name), url: url, retried: true)
+        lock.lock(); taskInfos[task.taskIdentifier] = recovered; lock.unlock()
+        return recovered
     }
 
     private func fileDone(packId: String, name: String, error: String?) {
@@ -75,36 +107,54 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
         if remaining <= 0 { onPackFinished?(packId) }
     }
 
+    private func handleFailure(_ info: TaskInfo, error: Error, foreground: Bool) {
+        let ns = error as NSError
+        // Lỗi huỷ do người dùng bấm Huỷ -> không thử lại, không báo lỗi
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
+        if !info.retried {
+            // Thử lại 1 lần: lỗi CannotCreateFile (-3000) của phiên nền -> đổi phiên thường
+            let useForeground = foreground || (ns.domain == NSURLErrorDomain && ns.code == -3000)
+            startTask(packId: info.packId, name: info.name, url: info.url, dest: info.dest,
+                      foreground: useForeground, retried: true)
+            return
+        }
+        fileDone(packId: info.packId, name: info.name,
+                 error: "\(info.name) · \(ns.domain) \(ns.code) · \(error.localizedDescription)")
+    }
+
     // MARK: URLSessionDownloadDelegate
     public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                            didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                            totalBytesExpectedToWrite: Int64) {
-        lock.lock(); let info = taskInfos[downloadTask.taskIdentifier]; lock.unlock()
-        guard let info else { return }
-        // Tổng tiến độ gói = file đã xong trên đĩa + phần đang tải của file hiện tại (xấp xỉ theo từng file)
+        guard let info = info(for: downloadTask) else { return }
         let onDisk = PackStore.directorySize(PackStore.packURL(info.packId))
-        lock.lock(); let total = packTotals[info.packId] ?? totalBytesExpectedToWrite; lock.unlock()
-        onProgress?(info.packId, onDisk, total)
+        lock.lock(); let total = packTotals[info.packId] ?? 0; lock.unlock()
+        guard total > 0 else { return }
+        let pct = Int((onDisk * 100) / total)
+        lock.lock(); let last = lastReportedPct[info.packId] ?? -1; if pct != last { lastReportedPct[info.packId] = pct }; lock.unlock()
+        if pct != last { onProgress?(info.packId, onDisk, total) } // chỉ báo khi % đổi — tránh spam sự kiện
     }
 
     public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                            didFinishDownloadingTo location: URL) {
-        lock.lock(); let info = taskInfos[downloadTask.taskIdentifier]; taskInfos.removeValue(forKey: downloadTask.taskIdentifier); lock.unlock()
-        guard let info else { return }
+        guard let info = info(for: downloadTask) else { return }
+        lock.lock(); taskInfos.removeValue(forKey: downloadTask.taskIdentifier); lock.unlock()
         do {
-            try? FileManager.default.removeItem(at: info.dest)
+            try FileManager.default.createDirectory(at: info.dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if FileManager.default.fileExists(atPath: info.dest.path) {
+                try FileManager.default.removeItem(at: info.dest)
+            }
             try FileManager.default.moveItem(at: location, to: info.dest)
             fileDone(packId: info.packId, name: info.name, error: nil)
         } catch {
-            fileDone(packId: info.packId, name: info.name, error: error.localizedDescription)
+            handleFailure(info, error: error, foreground: session == foregroundSession)
         }
     }
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error {
-            lock.lock(); let info = taskInfos[task.taskIdentifier]; taskInfos.removeValue(forKey: task.taskIdentifier); lock.unlock()
-            if let info { fileDone(packId: info.packId, name: info.name, error: error.localizedDescription) }
-        }
+        guard let error, let info = info(for: task) else { return }
+        lock.lock(); taskInfos.removeValue(forKey: task.taskIdentifier); lock.unlock()
+        handleFailure(info, error: error, foreground: session == foregroundSession)
     }
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

@@ -59,7 +59,12 @@ async function extractPdf(file, name) {
   const pdfjs = await import("../vendor/pdf.min.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.min.mjs", import.meta.url).href;
   const data = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data }).promise;
+  const pdf = await pdfjs.getDocument({
+    data,
+    cMapUrl: new URL("../vendor/cmaps/", import.meta.url).href,
+    cMapPacked: true,
+    standardFontDataUrl: new URL("../vendor/standard_fonts/", import.meta.url).href,
+  }).promise;
   const chapters = [];
   let totalChars = 0;
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -73,17 +78,33 @@ async function extractPdf(file, name) {
       if (!lines.has(y)) lines.set(y, []);
       lines.get(y).push({ x: item.transform[4], str: item.str });
     }
-    const pageLines = [...lines.entries()]
+    let pageLines = [...lines.entries()]
       .sort((a, b) => b[0] - a[0])
       .map(([, items]) => items.sort((a, b) => a.x - b.x).map((i) => i.str).join(" ").replace(/\s+/g, " ").trim())
       .filter(Boolean);
+    // Fallback: gom dòng ra rỗng nhưng trang vẫn có mảnh chữ -> ghép thô theo thứ tự gốc
+    if (!pageLines.length && content.items.length) {
+      const raw = content.items.map((i) => i.str || "").join(" ").replace(/\s+/g, " ").trim();
+      if (raw) pageLines = [raw];
+    }
     const text = pageLines.join("\n");
     totalChars += text.length;
     if (text) chapters.push({ title: `Trang ${p}`, paragraphs: [text] });
   }
-  if (!chapters.length) throw new Error("Không trích được chữ từ PDF này.");
-  // Ít hơn ~30 ký tự/trang = gần như chắc chắn là sách scan
+  // Ít hơn ~30 ký tự/trang = sách scan (chỉ có ảnh, không lớp chữ).
+  // Không ném lỗi nữa: vẫn nhận sách vào thư viện, gắn cờ scan và 1 chương giải thích —
+  // người dùng biết rõ lý do thay vì một câu báo lỗi chung chung.
   const scanned = totalChars / pdf.numPages < 30;
+  if (scanned) {
+    return {
+      title: stripExt(name), author: "", scanned: true, pages: pdf.numPages, totalChars,
+      chapters: [{
+        title: "Sách scan — chưa đọc được",
+        paragraphs: [`Sách này có ${pdf.numPages} trang nhưng chỉ trích được ${totalChars} ký tự chữ. Đây là sách scan dạng ảnh, không có lớp chữ bên dưới. Bản hiện tại chưa có nhận dạng chữ từ ảnh (OCR) nên chưa đọc được sách này. Các sách PDF có lớp chữ và EPUB vẫn đọc bình thường.`],
+      }],
+    };
+  }
+  if (!chapters.length) throw new Error(`Không trích được chữ từ PDF này (${pdf.numPages} trang, 0 ký tự).`);
   return { title: stripExt(name), author: "", chapters, scanned, pages: pdf.numPages };
 }
 
