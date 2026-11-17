@@ -1,6 +1,6 @@
 // app.js — Điều phối giao diện: thư viện -> đọc -> nghe; giọng; kiểm tra đọc.
 import { store, newId, formatBytes } from "./lib/store.js";
-import { extractBook } from "./lib/extract.js";
+import { extractBook, EXTRACT_VERSION } from "./lib/extract.js";
 import { Player, native, isNative } from "./lib/player.js";
 import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
 import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
@@ -122,11 +122,23 @@ async function openBook(id, autoplay = false) {
   state.book = meta;
   const progress = await store.getProgress(id);
   let extracted = progress?.extractedCache;
-  if (!extracted) {
+  // Cache trích bằng logic cũ (vd còn bìa/mục lục) -> trích lại từ file gốc.
+  // Chỉ số câu toàn cục đã đổi nên tiến độ nghe của sách này quay về đầu.
+  const cacheStale = !!extracted && (extracted.extractVersion || 1) !== EXTRACT_VERSION;
+  let startSentence = progress?.sentenceIndex || 0;
+  if (!extracted || cacheStale) {
     const blob = await store.getBlob(id);
-    if (!blob) { alert("Không tìm thấy file sách trên máy."); return; }
-    extracted = await extractBook(new File([blob], meta.title + "." + meta.format));
-    await store.setProgress(id, { extractedCache: extracted, sentenceIndex: progress?.sentenceIndex || 0 });
+    if (!blob) {
+      if (!extracted) { alert("Không tìm thấy file sách trên máy."); return; }
+    } else {
+      extracted = await extractBook(new File([blob], meta.title + "." + meta.format));
+      if (cacheStale) startSentence = 0;
+      await store.setProgress(id, { extractedCache: extracted, sentenceIndex: startSentence });
+      if (extracted.chapters.length !== meta.chapters) {
+        meta.chapters = extracted.chapters.length;
+        await store.updateBook(id, { chapters: extracted.chapters.length });
+      }
+    }
   }
   state.extracted = extracted;
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
@@ -134,7 +146,6 @@ async function openBook(id, autoplay = false) {
   $("readerTitle").textContent = extracted.title;
   $("scanWarn").classList.toggle("hidden", !extracted.scanned);
   $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
-  const startSentence = progress?.sentenceIndex || 0;
   await state.player.load(meta, extracted, await store.getBookDict(id));
   // Tìm chương chứa câu đã nghe dở
   let acc = 0, startChapter = 0;

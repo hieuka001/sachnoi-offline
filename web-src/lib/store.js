@@ -40,6 +40,10 @@ export const store = {
     await tx("books", "readwrite", (s) => s.put(meta));
     await tx("blobs", "readwrite", (s) => s.put({ id: meta.id, blob }));
   },
+  async updateBook(id, patch) {
+    const prev = await tx("books", "readonly", (s) => s.get(id));
+    if (prev) await tx("books", "readwrite", (s) => s.put({ ...prev, ...patch, id }));
+  },
   async listBooks() {
     const all = await tx("books", "readonly", (s) => s.getAll());
     return (all || []).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
