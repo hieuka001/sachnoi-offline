@@ -2,10 +2,10 @@ import Foundation
 import CryptoKit
 
 /// PackStore — nơi lưu các gói tải về (core engine + từng giọng) trên máy.
-/// Khác Bút Nghiên (nhúng sẵn 260MB model trong IPA): app này cài mới KHÔNG có
-/// model nào. Core/giọng tải từ GitHub Releases về Application Support/
-/// SachNoi/TTSPacks/<packId>/ — iOS không tự xoá thư mục này như Caches,
-/// và đã tắt backup iCloud (gói tải lại được, không tốn dung lượng backup).
+/// Từ 1.0.5: core VieNeu Turbo int8 (260MB) GẮN SẴN trong app (TTSAssets ở
+/// bundle, xem vieneuAssetsURL) — mở app là nghe ngay. Các gói khác vẫn tải từ
+/// GitHub Releases về Application Support/SachNoi/TTSPacks/<packId>/ — iOS
+/// không tự xoá thư mục này như Caches, và đã tắt backup iCloud.
 public enum PackStore {
     public static var rootURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -29,16 +29,21 @@ public enum PackStore {
         try? url.setResourceValues(values)
     }
 
-    /// Thư mục assets của VieNeu: ưu tiên gói core đã tải (int8 trước, fp32 sau),
-    /// cuối cùng mới tới TTSAssets trong bundle (bản dev nội bộ).
+    /// Thư mục assets của VieNeu: từ 1.0.5 core int8 GẮN SẴN trong app nên ưu
+    /// tiên bản bundle trước (bản đã tải trùng lặp có thể xoá để giải phóng máy),
+    /// sau đó mới tới các gói đã tải (fp32/nano khi có).
     public static func vieneuAssetsURL() -> URL? {
+        if let bundled = Bundle.main.url(forResource: "TTSAssets", withExtension: nil),
+           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
+            return bundled
+        }
         for packId in ["vieneu-turbo-int8", "vieneu-turbo-fp32", "vieneu-nano"] {
             let dir = packURL(packId)
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent("config.json").path) {
                 return dir
             }
         }
-        return Bundle.main.url(forResource: "TTSAssets", withExtension: nil)
+        return nil
     }
 
     public static func installedPacks() -> [[String: Any]] {

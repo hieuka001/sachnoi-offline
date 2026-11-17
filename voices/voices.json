@@ -6,7 +6,7 @@
       "name": "Bộ đọc VieNeu Chuẩn (int8, 48kHz)",
       "engine": "vieneu",
       "status": "available",
-      "description": "Tải 1 lần khoảng 261MB — sau đó dùng được cả 25 giọng VieNeu Bắc/Trung/Nam, bấm giọng nào nghe giọng đó ngay. Chất lượng tiếng Việt tốt nhất cho điện thoại, chạy hoàn toàn offline.",
+      "description": "Bộ đọc VieNeu Turbo (int8, 48kHz) — đã gắn sẵn trong app từ bản 1.0.5, mở app là nghe ngay không cần tải. 25 giọng 3 miền.",
       "files": [
         {
           "name": "config.json",

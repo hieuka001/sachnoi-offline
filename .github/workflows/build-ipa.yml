@@ -58,8 +58,25 @@ jobs:
              "$GITHUB_WORKSPACE/plugins/sachnoi-bridge/ios/Plugin/vendor/"
           ls -lh "$GITHUB_WORKSPACE/plugins/sachnoi-bridge/ios/Plugin/vendor/"
 
-      # LƯU Ý: bản này KHÔNG đóng model vào IPA (khác Bút Nghiên).
-      # Core/giọng tải từ GitHub Releases khi người dùng bấm tải — IPA phải nhẹ.
+      # Từ 1.0.5 (theo yêu cầu người dùng): gắn sẵn core VieNeu Turbo int8 — bộ
+      # giọng tốt nhất hiện có — vào thẳng app, mở là nghe ngay không cần tải.
+      # Assets lấy từ chính Release core-vieneu-turbo-int8-v1 + kiểm SHA-256
+      # theo voices/voices.json. Các gói khác (fp32/Nano/Piper) vẫn tải sau.
+      - name: Fetch bundled TTS core (Release + SHA-256)
+        run: |
+          mkdir -p ios/App/App/TTSAssets
+          python3 - <<'PY'
+          import json, pathlib
+          m = json.loads(pathlib.Path("voices/voices.json").read_text())
+          pack = next(p for p in m["packs"] if p["id"] == "vieneu-turbo-int8")
+          lines = [f"{f['sha256']}  ios/App/App/TTSAssets/{f['name']}" for f in pack["files"]]
+          pathlib.Path("/tmp/tts-sha.txt").write_text("\n".join(lines) + "\n")
+          pathlib.Path("/tmp/tts-urls.txt").write_text("\n".join(f["url"] for f in pack["files"]) + "\n")
+          print(f"{len(lines)} files")
+          PY
+          while read -r url; do curl -fL --retry 3 -o "ios/App/App/TTSAssets/$(basename "$url")" "$url"; done < /tmp/tts-urls.txt
+          shasum -a 256 -c /tmp/tts-sha.txt
+          du -sh ios/App/App/TTSAssets
 
       - name: Sync Capacitor iOS (incl. pod install)
         run: npx cap sync ios
@@ -84,8 +101,10 @@ jobs:
           echo "--- UIBackgroundModes (phải có audio + processing) ---"
           /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :BGTaskSchedulerPermittedIdentifiers" "$APP_PATH/Info.plist"
-          echo "--- Kiểm tra app NHẸ: không được chứa TTSAssets ---"
-          if [ -d "$APP_PATH/TTSAssets" ]; then echo "LỖI: IPA chứa TTSAssets — app phải nhẹ, model tải từ Releases"; exit 1; fi
+          echo "--- Kiểm tra model gắn sẵn: PHẢI có TTSAssets đủ 12 file ---"
+          test -f "$APP_PATH/TTSAssets/config.json" || { echo "LỖI: IPA thiếu TTSAssets — bản 1.0.5+ phải gắn sẵn core"; exit 1; }
+          ls "$APP_PATH/TTSAssets" | wc -l
+          du -sh "$APP_PATH/TTSAssets"
           du -sh "$APP_PATH"
           rm -rf Payload && mkdir Payload
           cp -R "$APP_PATH" Payload/

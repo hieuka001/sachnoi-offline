@@ -86,6 +86,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
             "backgroundAudio": true,
             "backgroundDownloads": true,
             "coreInstalled": PackStore.vieneuAssetsURL() != nil,
+            "coreBundled": Bundle.main.url(forResource: "TTSAssets", withExtension: nil) != nil,
             "manifestUpdateAvailable": BackgroundTasks.availableManifestVersion() ?? "",
         ])
     }

@@ -239,15 +239,20 @@ async function renderVoices() {
   }
   const m = state.manifest;
   const installed = await installedPackIds();
+  if (state.coreBundled === undefined && isNative()) {
+    try { state.coreBundled = !!(await native().getInfo())?.coreBundled; } catch { state.coreBundled = false; }
+  }
   const packHtml = (p) => {
     const isIn = installed.has(p.id);
+    const isBundledCore = p.id === "vieneu-turbo-int8" && !!state.coreBundled;
     const size = p.files.reduce((a, f) => a + (f.size || 0), 0);
     return `<div class="card" style="margin-bottom:10px">
-      <div class="row between"><h4>${escapeHtml(p.name)}</h4><span class="chip ${isIn ? "ok" : ""}">${isIn ? "✓ Đã tải" : formatBytes(size)}</span></div>
+      <div class="row between"><h4>${escapeHtml(p.name)}</h4><span class="chip ${isIn || isBundledCore ? "ok" : ""}">${isBundledCore ? "✓ Có sẵn trong app" : isIn ? "✓ Đã tải" : formatBytes(size)}</span></div>
       <p class="muted">${escapeHtml(p.description || "")}</p>
       <progress id="prog-${p.id}" value="0" max="100" class="hidden"></progress>
       <div class="row">
         ${p.status === "coming-soon" ? `<span class="chip">Sắp có</span>`
+          : isBundledCore ? (isIn ? `<button class="btn danger" data-del-pack="${p.id}">Xoá bản đã tải (trùng với bản gắn sẵn)</button>` : `<span class="chip ok">Mở app là nghe — không cần tải</span>`)
           : isIn ? `<button class="btn danger" data-del-pack="${p.id}">Xoá gói</button>`
                : `<button class="btn primary" data-dl-pack="${p.id}">Tải về máy</button>`}
       </div></div>`;
