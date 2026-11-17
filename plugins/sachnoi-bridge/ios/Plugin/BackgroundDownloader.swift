@@ -19,11 +19,12 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
     public var onFileFinished: ((_ packId: String, _ name: String, _ error: String?) -> Void)?
     public var onPackFinished: ((_ packId: String) -> Void)?
 
-    private struct TaskInfo { let packId: String; let name: String; let dest: URL; let url: URL; var retried: Bool }
+    private struct TaskInfo { let packId: String; let name: String; let dest: URL; let url: URL; var retried: Bool; var gen: Int = 0 }
     private var taskInfos: [Int: TaskInfo] = [:]
     private var packTotals: [String: Int64] = [:]
     private var packRemainingFiles: [String: Int] = [:]
     private var lastReportedPct: [String: Int] = [:]
+    private var packGeneration: [String: Int] = [:]
     private let lock = NSLock()
 
     private lazy var session: URLSession = {
@@ -40,6 +41,12 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
     }()
 
     public func download(packId: String, files: [[String: Any]]) {
+        // Huỷ mọi task cũ của gói trước: bấm tải chồng / xoá giữa chừng sinh task
+        // trùng cùng ghi 1 file là một nguồn lỗi -3000 (bản 1.0.2 chưa huỷ).
+        cancel(packId: packId)
+        lock.lock()
+        packGeneration[packId] = (packGeneration[packId] ?? 0) + 1
+        lock.unlock()
         PackStore.ensureRoot()
         let dir = PackStore.packURL(packId)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -68,7 +75,7 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
         let task = foreground ? foregroundSession.downloadTask(with: request) : session.downloadTask(with: request)
         task.taskDescription = "\(packId)|\(name)"
         lock.lock()
-        taskInfos[task.taskIdentifier] = TaskInfo(packId: packId, name: name, dest: dest, url: url, retried: retried)
+        taskInfos[task.taskIdentifier] = TaskInfo(packId: packId, name: name, dest: dest, url: url, retried: retried, gen: packGeneration[packId] ?? 0)
         lock.unlock()
         task.resume()
     }
@@ -98,7 +105,11 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
         return recovered
     }
 
-    private func fileDone(packId: String, name: String, error: String?) {
+    private func fileDone(packId: String, name: String, error: String?, gen: Int? = nil) {
+        if let gen {
+            lock.lock(); let current = packGeneration[packId] ?? 0; lock.unlock()
+            if gen != current { return } // sự kiện của lượt tải cũ đã bị thay thế
+        }
         onFileFinished?(packId, name, error)
         lock.lock()
         let remaining = (packRemainingFiles[packId] ?? 1) - 1
@@ -119,7 +130,7 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
             return
         }
         fileDone(packId: info.packId, name: info.name,
-                 error: "\(info.name) · \(ns.domain) \(ns.code) · \(error.localizedDescription)")
+                 error: "\(info.name) · \(ns.domain) \(ns.code) · \(error.localizedDescription)", gen: info.gen)
     }
 
     // MARK: URLSessionDownloadDelegate
@@ -145,7 +156,7 @@ public final class BackgroundDownloader: NSObject, URLSessionDownloadDelegate {
                 try FileManager.default.removeItem(at: info.dest)
             }
             try FileManager.default.moveItem(at: location, to: info.dest)
-            fileDone(packId: info.packId, name: info.name, error: nil)
+            fileDone(packId: info.packId, name: info.name, error: nil, gen: info.gen)
         } catch {
             handleFailure(info, error: error, foreground: session == foregroundSession)
         }

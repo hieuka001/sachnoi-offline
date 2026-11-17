@@ -24,7 +24,24 @@ export class Player {
     this.sleep = null; // {type:'minutes', at:timestamp} | {type:'chapter'}
     this.book = null;
     this._synthSeq = 0;
+    // NativePlayer (iOS 1.0.3+): chuỗi phát chạy native -> khoá máy vẫn đọc tiếp.
+    // JS chỉ nhận sự kiện để highlight/lưu tiến độ. null = chưa dò, false = không có.
+    this.nativePlayer = null;
+    this._nativeKey = null;
+    this._probeNativePlayer();
     this._wireNativeEvents();
+  }
+
+  _probeNativePlayer() {
+    const bridge = native();
+    if (!bridge?.getInfo) { this.nativePlayer = false; return; }
+    bridge.getInfo()
+      .then((info) => { this.nativePlayer = !!info?.nativePlayer; })
+      .catch(() => { this.nativePlayer = false; });
+  }
+
+  _nativeItems() {
+    return this.sentences.map((s) => ({ t: s.spoken, c: s.chapterTitle || "" }));
   }
 
   /** Dựng danh sách câu cho cả sách (theo chương), áp từ điển cá nhân của sách. */
@@ -50,6 +67,23 @@ export class Player {
     if (fromIndex !== null) this.index = fromIndex;
     if (this.index < 0) this.index = 0;
     if (this.index >= this.sentences.length) return;
+    if (this.nativePlayer) {
+      const key = `${this.book?.id || ""}|${this.voice}`;
+      const bridge = native();
+      this.playing = true;
+      this.onState(true);
+      if (fromIndex !== null || this._nativeKey !== key) {
+        this._nativeKey = key;
+        await bridge.ttsPlay({
+          items: this._nativeItems(), startIndex: this.index, voice: this.voice,
+          title: this.book?.title || "", author: this.book?.author || "",
+        }).catch(() => {});
+        bridge.ttsSetRate?.({ rate: this.speed }).catch(() => {});
+      } else {
+        await bridge.ttsResume().catch(() => {});
+      }
+      return;
+    }
     this.playing = true;
     this.onState(true);
     await this.playCurrent();
@@ -58,12 +92,22 @@ export class Player {
   pause() {
     this.playing = false;
     this.onState(false);
+    if (this.nativePlayer) { native()?.ttsPause?.().catch(() => {}); return; }
     this.audio.pause();
     if (!isNative()) window.speechSynthesis?.pause();
     this.pushNowPlaying();
   }
 
   async resume() {
+    if (this.nativePlayer) {
+      if (this._nativeKey) {
+        this.playing = true;
+        this.onState(true);
+        await native()?.ttsResume?.().catch(() => {});
+        return;
+      }
+      return this.play(this.index < 0 ? 0 : null);
+    }
     if (this.index < 0) return this.play(0);
     this.playing = true;
     this.onState(true);
@@ -77,6 +121,7 @@ export class Player {
 
   stop() {
     this.playing = false;
+    if (this.nativePlayer) { native()?.ttsStopPlayback?.().catch(() => {}); this._nativeKey = null; }
     this._synthSeq++;
     this.audio.pause();
     this.audio.removeAttribute("src");
@@ -87,10 +132,31 @@ export class Player {
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
   }
 
-  next() { if (this.index + 1 < this.sentences.length) { this.index++; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); } }
-  prev() { if (this.index > 0) { this.index--; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); } }
+  next() {
+    if (this.nativePlayer) { native()?.ttsNext?.().catch(() => {}); return; }
+    if (this.index + 1 < this.sentences.length) { this.index++; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); }
+  }
+  prev() {
+    if (this.nativePlayer) { native()?.ttsPrev?.().catch(() => {}); return; }
+    if (this.index > 0) { this.index--; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); }
+  }
+
+  setSpeed(v) {
+    this.speed = v;
+    this.audio.playbackRate = v;
+    if (this.nativePlayer) native()?.ttsSetRate?.({ rate: v }).catch(() => {});
+  }
+
+  setVoice(v) {
+    this.voice = v;
+    this.cache.clear();
+    if (this.nativePlayer) { this._nativeKey = null; native()?.ttsSetVoice?.({ voice: v }).catch(() => {}); }
+  }
 
   setSleep(mode, minutes = 0) {
+    if (this.nativePlayer) {
+      native()?.ttsSetSleep?.({ mode, minutes }).catch(() => {});
+    }
     if (mode === "off") this.sleep = null;
     else if (mode === "chapter") this.sleep = { type: "chapter" };
     else this.sleep = { type: "minutes", at: Date.now() + minutes * 60000 };
@@ -187,7 +253,26 @@ export class Player {
   _wireNativeEvents() {
     const bridge = native();
     if (!bridge?.addListener) return;
+    // Sự kiện của NativePlayer: native tự phát, JS chỉ đồng bộ UI/lưu tiến độ
+    bridge.addListener("ttsSentence", ({ index }) => {
+      if (!this.nativePlayer) return;
+      this.index = index;
+      const s = this.sentences[index];
+      if (s) this.onSentence(index, s);
+    });
+    bridge.addListener("ttsState", ({ playing }) => {
+      if (!this.nativePlayer) return;
+      this.playing = playing;
+      this.onState(playing);
+    });
+    bridge.addListener("ttsEnded", () => {
+      if (!this.nativePlayer) return;
+      this.playing = false;
+      this.onState(false);
+    });
     bridge.addListener("remoteCommand", ({ command }) => {
+      if (this.nativePlayer) return; // native đã xử lý trực tiếp, UI theo ttsState
+
       if (command === "play") this.resume();
       else if (command === "pause") this.pause();
       else if (command === "toggle") this.playing ? this.pause() : this.resume();
@@ -195,6 +280,7 @@ export class Player {
       else if (command === "prev") this.prev();
     });
     bridge.addListener("audioInterruption", ({ phase, shouldResume }) => {
+      if (this.nativePlayer) return; // native tự xử lý ngắt quãng
       if (phase === "began") { this._wasPlaying = this.playing; if (this.playing) this.pause(); }
       else if (phase === "ended" && shouldResume && this._wasPlaying) this.resume();
     });

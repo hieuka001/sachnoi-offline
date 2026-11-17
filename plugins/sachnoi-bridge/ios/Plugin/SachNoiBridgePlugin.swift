@@ -9,19 +9,38 @@ import AVFoundation
 /// - saveFile: xuất file qua khay chia sẻ iOS (WKWebView không tự tải blob được)
 @objc(SachNoiBridgePlugin)
 public class SachNoiBridgePlugin: CAPPlugin {
+    private let player = NativePlayer()
 
     override public func load() {
         PackStore.ensureRoot()
         TtsServer.shared.start()
         lockWebView(attempt: 0)
-        // Chuyển sự kiện native -> web
+        // NativePlayer (1.0.3): chuỗi phát chạy native để khoá máy vẫn đọc tiếp.
+        player.onSentence = { [weak self] idx in self?.notifyListeners("ttsSentence", data: ["index": idx]) }
+        player.onState = { [weak self] playing in self?.notifyListeners("ttsState", data: ["playing": playing]) }
+        player.onEnded = { [weak self] in self?.notifyListeners("ttsEnded", data: [:]) }
+        // Remote/ngắt quãng điều khiển THẲNG NativePlayer (WebView có thể đang bị
+        // treo khi chạy nền) — vẫn chuyển sự kiện sang web để đồng bộ giao diện.
         BackgroundAudio.shared.onRemoteCommand = { [weak self] cmd in
-            self?.notifyListeners("remoteCommand", data: ["command": cmd])
+            guard let self else { return }
+            switch cmd {
+            case "play": self.player.resume()
+            case "pause": self.player.pause()
+            case "toggle": if self.player.playing { self.player.pause() } else { self.player.resume() }
+            case "next": self.player.next()
+            case "prev": self.player.prev()
+            default: break
+            }
+            self.notifyListeners("remoteCommand", data: ["command": cmd])
         }
         BackgroundAudio.shared.onInterruption = { [weak self] phase, shouldResume in
-            self?.notifyListeners("audioInterruption", data: ["phase": phase, "shouldResume": shouldResume])
+            guard let self else { return }
+            if phase == "began" { self.player.interruptionBegan() }
+            else { self.player.interruptionEnded(shouldResume: shouldResume) }
+            self.notifyListeners("audioInterruption", data: ["phase": phase, "shouldResume": shouldResume])
         }
         BackgroundAudio.shared.onRoutePause = { [weak self] in
+            self?.player.pause()
             self?.notifyListeners("remoteCommand", data: ["command": "pause"])
         }
         let dl = BackgroundDownloader.shared
@@ -63,6 +82,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
             "build": info?["CFBundleVersion"] as? String ?? "0",
             "platform": "ios",
             "ttsNative": true,
+            "nativePlayer": true,
             "backgroundAudio": true,
             "backgroundDownloads": true,
             "coreInstalled": PackStore.vieneuAssetsURL() != nil,
@@ -156,6 +176,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     @objc func deletePack(_ call: CAPPluginCall) {
         guard let packId = call.getString("packId") else { call.reject("needs packId"); return }
+        BackgroundDownloader.shared.cancel(packId: packId) // huỷ tải trước khi xoá thư mục
         do { try PackStore.deletePack(packId); call.resolve(["deleted": true]) }
         catch { call.reject(error.localizedDescription) }
     }
@@ -201,5 +222,50 @@ public class SachNoiBridgePlugin: CAPPlugin {
     @objc func markManifestSeen(_ call: CAPPluginCall) {
         if let v = call.getString("version") { BackgroundTasks.markManifestSeen(v) }
         call.resolve()
+    }
+
+    // MARK: - NativePlayer (phát nền native)
+    @objc func ttsPlay(_ call: CAPPluginCall) {
+        guard let rawItems = call.getArray("items") as? [[String: Any]] else {
+            call.reject("ttsPlay needs items"); return
+        }
+        let items = rawItems
+            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "") }
+            .filter { !$0.text.isEmpty }
+        guard !items.isEmpty else { call.reject("Không có câu nào để đọc"); return }
+        player.load(items: items, voice: call.getString("voice") ?? "default",
+                    title: call.getString("title") ?? "", author: call.getString("author") ?? "")
+        player.play(from: call.getInt("startIndex") ?? 0)
+        call.resolve(["ok": true, "count": items.count])
+    }
+
+    @objc func ttsPause(_ call: CAPPluginCall) { player.pause(); call.resolve(["ok": true]) }
+    @objc func ttsResume(_ call: CAPPluginCall) { player.resume(); call.resolve(["ok": true]) }
+    @objc func ttsStopPlayback(_ call: CAPPluginCall) { player.stop(); call.resolve(["ok": true]) }
+    @objc func ttsNext(_ call: CAPPluginCall) { player.next(); call.resolve(["ok": true]) }
+    @objc func ttsPrev(_ call: CAPPluginCall) { player.prev(); call.resolve(["ok": true]) }
+
+    @objc func ttsSeek(_ call: CAPPluginCall) {
+        player.seek(to: call.getInt("index") ?? 0)
+        call.resolve(["ok": true])
+    }
+
+    @objc func ttsSetRate(_ call: CAPPluginCall) {
+        player.setRate(Float(call.getDouble("rate") ?? 1.0))
+        call.resolve(["ok": true])
+    }
+
+    @objc func ttsSetVoice(_ call: CAPPluginCall) {
+        player.setVoice(call.getString("voice") ?? "default")
+        call.resolve(["ok": true])
+    }
+
+    @objc func ttsSetSleep(_ call: CAPPluginCall) {
+        player.setSleep(mode: call.getString("mode") ?? "off", minutes: call.getDouble("minutes") ?? 0)
+        call.resolve(["ok": true])
+    }
+
+    @objc func ttsPlayerState(_ call: CAPPluginCall) {
+        call.resolve(["index": player.currentIndex, "count": player.count])
     }
 }

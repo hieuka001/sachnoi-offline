@@ -48,14 +48,14 @@ $("playBtn").addEventListener("click", () => {
 });
 $("nextBtn").addEventListener("click", () => state.player.next());
 $("prevBtn").addEventListener("click", () => state.player.prev());
-$("speedSelect").addEventListener("change", (e) => { state.player.speed = parseFloat(e.target.value); state.player.audio.playbackRate = state.player.speed; });
+$("speedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); });
 $("sleepSelect").addEventListener("change", (e) => {
   const v = e.target.value;
   if (v === "off") state.player.setSleep("off");
   else if (v === "chapter") state.player.setSleep("chapter");
   else state.player.setSleep("minutes", parseInt(v, 10));
 });
-$("voiceSelect").addEventListener("change", (e) => { state.player.voice = e.target.value; state.player.cache.clear(); });
+$("voiceSelect").addEventListener("change", (e) => { state.player.setVoice(e.target.value); });
 
 // ---------- Thư viện ----------
 function progressPct(pr) {
@@ -75,9 +75,9 @@ async function renderLibrary() {
       <h4>${escapeHtml(b.title)}</h4>
       <p class="muted">${escapeHtml(b.author || "")} ${b.format?.toUpperCase() || ""} · ${b.chapters || "?"} chương/phần</p>
       ${pr?.totalSentences ? `<progress value="${pct}" max="100" style="width:100%"></progress>
-      <p class="muted tnum">Đã nghe ${pct}% · câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}</p>` : ""}
+      <p class="muted tnum">Đã nghe ${pct === 0 && pr.sentenceIndex > 0 ? "<1" : pct}% · câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}</p>` : ""}
       <div class="row">
-        ${pct > 0 && pct < 100 ? `<button class="btn jade" data-continue="${b.id}">▶ Nghe tiếp</button>` : ""}
+        ${pr?.sentenceIndex > 0 && pct < 100 ? `<button class="btn jade" data-continue="${b.id}">▶ Nghe tiếp</button>` : ""}
         <button class="btn primary" data-open="${b.id}">Đọc & nghe</button>
         <button class="btn danger" data-del="${b.id}">Xoá</button>
       </div>
@@ -160,7 +160,7 @@ async function renderHistory() {
     const pct = progressPct(pr);
     const when = pr.lastListenedAt ? new Date(pr.lastListenedAt).toLocaleString("vi-VN") : "";
     return `<div class="card" style="margin-bottom:10px">
-      <div class="row between"><h4>${escapeHtml(b.title)}</h4><span class="chip ${pct >= 100 ? "ok" : ""}">${pct >= 100 ? "✓ Đã nghe xong" : `Đã nghe ${pct}%`}</span></div>
+      <div class="row between"><h4>${escapeHtml(b.title)}</h4><span class="chip ${pct >= 100 ? "ok" : ""}">${pct >= 100 ? "✓ Đã nghe xong" : `Đã nghe ${pct === 0 && pr.sentenceIndex > 0 ? "<1" : pct}%`}</span></div>
       <progress value="${pct}" max="100" style="width:100%"></progress>
       <p class="muted tnum">Câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}${when ? ` · Nghe gần nhất: ${when}` : ""}</p>
       <div class="row">

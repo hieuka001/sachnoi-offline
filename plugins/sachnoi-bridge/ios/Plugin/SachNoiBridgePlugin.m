@@ -18,4 +18,15 @@ CAP_PLUGIN(SachNoiBridgePlugin, "SachNoiBridge",
            CAP_PLUGIN_METHOD(clearNowPlaying, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(scheduleBackgroundTasks, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(markManifestSeen, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsPlay, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsPause, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsResume, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsStopPlayback, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsNext, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsPrev, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsSeek, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsSetRate, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsSetVoice, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsSetSleep, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsPlayerState, CAPPluginReturnPromise);
 )
