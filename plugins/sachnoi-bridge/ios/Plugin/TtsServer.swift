@@ -8,7 +8,21 @@ import CryptoKit
 /// Cache WAV theo (giọng + nội dung) trong thư mục Caches, tối đa 300 file.
 final class TtsServer {
     static let shared = TtsServer()
-    private init() {}
+
+    // 1.9.5: HỒ ENGINE. Số liệu Chẩn đoán trên máy anh (1.9.4): tổng hợp 1
+    // đoạn trung bình 13,5s, lần lâu nhất 32s — trong khi đoạn đó phát chỉ
+    // ~10s ở tốc độ 1,25×. MỘT engine vì vậy không bao giờ theo kịp, đệm
+    // sâu bao nhiêu cũng cạn. Hai engine độc lập (session ONNX, g2p, rng
+    // riêng từng engine) tổng hợp 2 đoạn SONG SONG -> thông lượng gần gấp
+    // đôi. Máy RAM < 3GB giữ 1 engine để tránh bị iOS giết vì bộ nhớ.
+    private let maxEngines: Int
+    private let poolLock = NSLock()
+    private var idleEngines: [VieNeuEngine] = []
+    private var totalEngines = 0 // đã tạo + đang tạo
+
+    private init() {
+        maxEngines = ProcessInfo.processInfo.physicalMemory >= 3_000_000_000 ? 2 : 1
+    }
 
     private var listener: NWListener?
     private let synthQueue = DispatchQueue(label: "app.sachnoi.tts", qos: .userInitiated)
@@ -28,7 +42,6 @@ final class TtsServer {
         case notStarted, loading, ready, failed(String)
     }
     private var engineState: EngineState = .notStarted
-    private var engine: VieNeuEngine?
 
     // Trạng thái để chẩn đoán từ phía web (plugin ttsDiagnostics): server có nghe
     // thật không, engine lỗi ở đâu — thay vì im lặng rơi về giọng trình duyệt.
@@ -102,9 +115,22 @@ final class TtsServer {
     }
 
     /// Nạp model ở nền ngay khi app mở để lần bấm Nghe đầu tiên không phải chờ.
+    /// 1.9.5: nạp sẵn CẢ HAI engine của hồ (tuần tự, tránh tranh CPU lúc mở app).
     func warmup() {
-        synthQueue.async { [weak self] in
-            _ = try? self?.getEngine()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            for _ in 0..<self.maxEngines {
+                self.poolLock.lock()
+                if self.totalEngines >= self.maxEngines { self.poolLock.unlock(); break }
+                self.totalEngines += 1
+                self.poolLock.unlock()
+                if let e = try? self.makeEngine() {
+                    self.releaseEngine(e)
+                } else {
+                    self.poolLock.lock(); self.totalEngines -= 1; self.poolLock.unlock()
+                    break
+                }
+            }
         }
     }
 
@@ -126,12 +152,10 @@ final class TtsServer {
         return store
     }
 
-    private func getEngine() throws -> VieNeuEngine {
-        if let engine { return engine }
+    private func makeEngine() throws -> VieNeuEngine {
         setEngineState(.loading)
         do {
             let created = try VieNeuEngine(assetsDir: assetsURL())
-            engine = created
             setEngineState(.ready)
             setInitSteps(VieNeuEngine.lastInitSteps)
             setEngineError(nil)
@@ -144,6 +168,36 @@ final class TtsServer {
         }
     }
 
+    /// Lấy 1 engine rảnh khỏi hồ; chưa có thì tạo mới nếu còn suất; cả hai
+    /// đang bận thì chờ (mỗi engine chỉ phục vụ 1 lần tổng hợp tại một thời
+    /// điểm nên rng/phonemizer của nó không bao giờ bị dùng đồng thời).
+    private func acquireEngine() throws -> VieNeuEngine {
+        let deadline = Date().addingTimeInterval(30)
+        while true {
+            poolLock.lock()
+            if let e = idleEngines.popLast() { poolLock.unlock(); return e }
+            if totalEngines < maxEngines {
+                totalEngines += 1
+                poolLock.unlock()
+                do { return try makeEngine() }
+                catch {
+                    poolLock.lock(); totalEngines -= 1; poolLock.unlock()
+                    throw error
+                }
+            }
+            poolLock.unlock()
+            if case .failed(let msg) = engineStateSnapshot() {
+                throw VieNeuEngine.EngineError.asset("engine lỗi: \(msg)")
+            }
+            if Date() > deadline { throw VieNeuEngine.EngineError.asset("engine chưa sẵn sàng sau 30s") }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+
+    private func releaseEngine(_ e: VieNeuEngine) {
+        poolLock.lock(); idleEngines.append(e); poolLock.unlock()
+    }
+
     /// Ảnh chụp trạng thái cho web hiển thị khi dò giọng thất bại (plugin
     /// ttsDiagnostics gọi, kèm tự kiểm tra loopback ở phía plugin).
     func diagnostics() -> [String: Any] {
@@ -153,6 +207,9 @@ final class TtsServer {
         let steps = initStepsText
         let sLast = synthLastMs, sChars = synthLastChars, sAvg = synthAvgMs
         stateLock.unlock()
+        poolLock.lock()
+        let poolTotal = totalEngines, poolIdle = idleEngines.count
+        poolLock.unlock()
         var engineText = "notStarted"
         switch engineStateSnapshot() {
         case .notStarted: engineText = "notStarted"
@@ -182,6 +239,8 @@ final class TtsServer {
             "synthLastMs": sLast,
             "synthLastChars": sChars,
             "synthAvgMs": sAvg,
+            "synthSteps": VieNeuEngine.lastSynthSteps,
+            "engines": "\(poolTotal)/\(maxEngines) (rảnh \(poolIdle))",
         ]
     }
 
@@ -314,15 +373,18 @@ final class TtsServer {
         }
     }
 
-    /// Cho cầu plugin gọi từ thread khác: xếp hàng vào synthQueue như đường HTTP.
+    /// Cho cầu plugin gọi từ thread khác. 1.9.5: KHÔNG còn xếp hàng serial
+    /// qua synthQueue — chính hàng đợi đó từng ép mọi lần tổng hợp chạy nối
+    /// tiếp trên 1 engine. Nay lấy engine từ hồ và tổng hợp song song.
     func synthesizeSync(text: String, voice: String) throws -> Data {
-        try synthQueue.sync { try synthesizeNow(text: text, voice: voice) }
+        try synthesizeNow(text: text, voice: voice)
     }
 
     /// Tổng hợp TRỰC TIẾP bằng lõi (đợt 31): không đọc/ghi đĩa, không lưu lại
     /// âm thanh đã đọc. Engine đã nạp sẵn từ lúc mở app nên đây là suy luận thuần.
     func synthesizeNow(text: String, voice: String) throws -> Data {
-        let engine = try getEngine()
+        let engine = try acquireEngine()
+        defer { releaseEngine(engine) }
         let preset = engine.voices.resolve(voice.isEmpty ? nil : voice)
         let t0 = Date()
         let data = try engine.synthesize(text: text, voiceName: preset.name,

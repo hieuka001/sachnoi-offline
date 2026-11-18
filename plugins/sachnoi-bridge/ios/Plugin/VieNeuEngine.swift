@@ -13,6 +13,12 @@ final class VieNeuEngine {
     /// đọc qua TtsServer để biết chính xác bước nào chậm trên máy thật.
     static var lastInitSteps = ""
 
+    /// 1.9.5: thời gian từng pha của lần tổng hợp gần nhất (phiên âm / sinh /
+    /// giải mã codec / ghép) — Chẩn đoán trên máy anh cho thấy tổng hợp 1 đoạn
+    /// ~13,5s; phải biết pha nào ăn hết thời gian đó mới sửa đúng chỗ.
+    static var lastSynthSteps = ""
+    private var codecMs = 0
+
     enum EngineError: Error, CustomStringConvertible {
         case asset(String)
         case ort(String)
@@ -122,20 +128,33 @@ final class VieNeuEngine {
     /// ranh giới đoạn. nil = giữ mặc định gốc của engine (0.5/0.3/0.7).
     func synthesize(text: String, voiceName: String?, punctPause: Double? = nil, paraPause: Double? = nil) throws -> Data {
         let preset = voices.resolve(voiceName)
+        var t = Date()
         let (chunks, gaps) = phonemizer.chunksWithGaps(text)
+        var phonMs = Int(Date().timeIntervalSince(t) * 1000)
         if chunks.isEmpty { return Self.wavData([]) }
         var wavs: [[Float]] = []
+        var genMs = 0
+        var codecTotal = 0
         for chunk in chunks {
+            t = Date()
             let ph = phonemizer.phonemizeWithEmotions(chunk)
+            phonMs += Int(Date().timeIntervalSince(t) * 1000)
             let cap = min(300, SpeechUtils.maxExpectedFrames(ph))
+            t = Date()
+            codecMs = 0
             let wav = try generate(phonemes: ph, speakerEmb: preset.speakerEmb,
                                    refCodes: preset.codes, maxNewFrames: cap)
+            genMs += Int(Date().timeIntervalSince(t) * 1000)
+            codecTotal += codecMs
             wavs.append(wav)
         }
         let silencePs = punctPause != nil
             ? SpeechUtils.gapsToSilence(gaps, punct: punctPause!, para: paraPause ?? 0.7)
             : SpeechUtils.gapsToSilence(gaps)
+        t = Date()
         let joined = SpeechUtils.joinAudioChunks(wavs, Self.sampleRate, silencePs: silencePs)
+        let joinMs = Int(Date().timeIntervalSince(t) * 1000)
+        Self.lastSynthSteps = "phiên âm \(phonMs)ms · sinh \(genMs)ms (codec \(codecTotal)ms) · ghép \(joinMs)ms · \(chunks.count) chunk"
         return Self.wavData(joined)
     }
 
@@ -159,9 +178,18 @@ final class VieNeuEngine {
         appendLE(UInt16(16))           // bits
         data.append(contentsOf: [UInt8]("data".utf8))
         appendLE(UInt32(samples.count * 2))
-        for s in samples {
+        // 1.9.5: chuyển cả khối PCM một lần thay vì append từng mẫu (một đoạn
+        // ~13s = ~600 nghìn mẫu; vòng lặp cũ tốn hàng trăm ms chỉ để ghi).
+        var pcm = [Int16](repeating: 0, count: samples.count)
+        for (i, s) in samples.enumerated() {
             let clamped = max(-1.0, min(1.0, s))
-            appendLE(Int16((Double(clamped) * 32767.0).rounded()))
+            pcm[i] = Int16((Double(clamped) * 32767.0).rounded())
+        }
+        pcm.withUnsafeBufferPointer { buf in
+            guard let base = buf.baseAddress else { return }
+            base.withMemoryRebound(to: UInt8.self, capacity: pcm.count * 2) { p in
+                data.append(p, count: pcm.count * 2)
+            }
         }
         return data
     }
@@ -277,6 +305,8 @@ final class VieNeuEngine {
     }
 
     private func decodeCodes(_ frames: [[Int]]) throws -> [Float] {
+        let t0 = Date()
+        defer { codecMs = Int(Date().timeIntervalSince(t0) * 1000) }
         let t = frames.count
         var flat = [Int32](repeating: 0, count: t * nVq)
         for (i, frame) in frames.enumerated() {
@@ -445,8 +475,21 @@ final class VieNeuEngine {
 
     // MARK: - ORT helpers
 
+    // 1.9.5: outputNames() từng bị gọi lại ở MỌI lần run (17 lần/khung hình)
+    // — cache theo session. Khoá bảo vệ vì hồ engine có thể chạy song song.
+    private var outputNamesCache: [ObjectIdentifier: Set<String>] = [:]
+    private let outputNamesLock = NSLock()
+
     private func run(_ session: ORTSession, _ inputs: [String: ORTValue]) throws -> [String: ORTValue] {
-        try session.run(withInputs: inputs, outputNames: Set(try session.outputNames()), runOptions: nil)
+        let key = ObjectIdentifier(session)
+        outputNamesLock.lock()
+        var names = outputNamesCache[key]
+        if names == nil {
+            names = Set(try session.outputNames())
+            outputNamesCache[key] = names
+        }
+        outputNamesLock.unlock()
+        return try session.run(withInputs: inputs, outputNames: names!, runOptions: nil)
     }
 
     private func need(_ outputs: [String: ORTValue], _ name: String) throws -> ORTValue {

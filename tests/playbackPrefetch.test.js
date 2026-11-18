@@ -58,6 +58,17 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
+test("1.9.5: TtsServer có hồ 2 engine song song, bỏ hàng đợi serial", () => {
+  const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
+  assert.ok(server.includes("acquireEngine"), "thiếu acquireEngine (hồ engine)");
+  assert.ok(server.includes("idleEngines"), "thiếu idleEngines (hồ engine)");
+  assert.ok(server.includes("maxEngines"), "thiếu maxEngines");
+  assert.ok(!server.includes("synthQueue.sync"), "synthesizeSync vẫn serial qua synthQueue — hồ không chạy song song được");
+  const engine = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/VieNeuEngine.swift"), "utf8");
+  assert.ok(engine.includes("outputNamesCache"), "thiếu cache outputNames trong VieNeuEngine");
+  assert.ok(engine.includes("lastSynthSteps"), "thiếu đo thời gian từng pha (lastSynthSteps)");
+});
+
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
   assert.ok(html.includes("<h3>Giọng VieNeu</h3>"), "tiêu đề Giọng VieNeu phải còn");
