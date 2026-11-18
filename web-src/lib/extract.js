@@ -4,7 +4,7 @@
 
 // Tăng số này mỗi khi logic trích thay đổi: sách đã lưu cache cũ sẽ được trích
 // lại từ file gốc ở lần mở kế tiếp (xem openBook trong app.js).
-export const EXTRACT_VERSION = 2;
+export const EXTRACT_VERSION = 3;
 
 export async function extractBook(file) {
   const name = file.name || "sach";
@@ -36,6 +36,49 @@ export function isTocLikeChapter(paragraphs) {
   }
   const avgLen = totalLen / paragraphs.length;
   return tocLike / paragraphs.length >= 0.6 && avgLen < 80;
+}
+
+// Mục lục dạng VĂN XUÔI CHẢY: nhiều EPUB (như Đạo Đức Kinh của Nguyễn Hiến Lê)
+// dồn mọi mục lục vào 1-2 đoạn dài, không xuống dòng từng mục — bản 1.0.4 chỉ
+// nhìn theo dòng nên trượt. Hàm này chẻ văn bản tại các mốc mục (số thứ tự, §,
+// PHẦN/CHƯƠNG, chữ cái A. B.) rồi đo độ ngắn/mật độ của các mẩu.
+export function isTocLikeText(paragraphs) {
+  if (!paragraphs || !paragraphs.length) return false;
+  const text = paragraphs.join(" ").replace(/\s+/g, " ").trim();
+  if (/^mục\s*lục\s*[:.]/i.test(text)) return true; // mở đầu đúng chữ "MỤC LỤC:"
+  if (text.length > 8000) return false;
+  const segments = text
+    .split(/(?=§)|(?=\bPHẦN\s+)|(?=\bCHƯƠNG\s+)|(?=\bMỤC\s+)|(?=\b\d{1,2}\.\s)|(?=\b[A-D]\.\s)/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 2);
+  if (segments.length < 8) return false;
+  const avgLen = segments.reduce((a, s) => a + s.length, 0) / segments.length;
+  const shortRatio = segments.filter((s) => s.length <= 70).length / segments.length;
+  return avgLen <= 60 && shortRatio >= 0.7;
+}
+
+// Tách đoạn tôn trọng cấu trúc dòng của EPUB: <br> = xuống dòng, chỉ lấy thẻ
+// block "lá" (không chứa block khác) để không trùng nội dung. Bản cũ chỉ lấy
+// <p> nên sách để chữ trong <div>/<br> bị dồn thành 1 đoạn khổng lồ.
+function extractParagraphs(doc) {
+  const body = doc.body;
+  if (!body) return [];
+  body.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+  const BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, blockquote, div, section, article, td";
+  const paras = [];
+  body.querySelectorAll(BLOCKS).forEach((el) => {
+    if (el.querySelector(BLOCKS)) return;
+    const raw = (el.textContent || "").replace(/\u00a0/g, " ");
+    for (const line of raw.split("\n")) {
+      const c = clean(line);
+      if (c) paras.push(c);
+    }
+  });
+  if (!paras.length) {
+    const t = clean(body.textContent || "");
+    if (t) paras.push(t);
+  }
+  return paras;
 }
 
 export function isCoverLikeChapter(paragraphs) {
@@ -91,15 +134,7 @@ async function extractEpub(file, name) {
     const doc = new DOMParser().parseFromString(html, "text/html");
     doc.querySelectorAll("script, style").forEach((e) => e.remove());
     const heading = clean(doc.querySelector("h1, h2, h3")?.textContent || "");
-    const paragraphs = [];
-    doc.querySelectorAll("p, h1, h2, h3, h4, li, blockquote").forEach((el) => {
-      const t = clean(el.textContent || "");
-      if (t) paragraphs.push(t);
-    });
-    if (!paragraphs.length) {
-      const t = clean(doc.body?.textContent || "");
-      if (t) paragraphs.push(t);
-    }
+    const paragraphs = extractParagraphs(doc);
     if (!paragraphs.length) continue;
     const chapterTitle = heading || `Phần ${allChapters.length + 1}`;
     allChapters.push({ title: chapterTitle, paragraphs });
@@ -108,7 +143,8 @@ async function extractEpub(file, name) {
     // trang toàn dòng mục lục ngắn. Không bao giờ lọc sạch cả sách.
     if (TOC_TITLES.test(chapterTitle)) continue;
     if (spineIdx === 0 && isCoverLikeChapter(paragraphs)) continue;
-    if (spineIdx < 3 && isTocLikeChapter(paragraphs)) continue;
+    if (spineIdx < 6 && isTocLikeChapter(paragraphs)) continue;
+    if (spineIdx < 6 && isTocLikeText(paragraphs)) continue;
     chapters.push({ title: chapterTitle, paragraphs });
   }
   const finalChapters = chapters.length ? chapters : allChapters;

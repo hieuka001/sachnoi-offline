@@ -231,13 +231,33 @@ public class SachNoiBridgePlugin: CAPPlugin {
             call.reject("ttsPlay needs items"); return
         }
         let items = rawItems
-            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "") }
+            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "", paraEnd: ($0["p"] as? NSNumber)?.boolValue ?? false) }
             .filter { !$0.text.isEmpty }
         guard !items.isEmpty else { call.reject("Không có câu nào để đọc"); return }
         player.load(items: items, voice: call.getString("voice") ?? "default",
                     title: call.getString("title") ?? "", author: call.getString("author") ?? "")
+        if let audio = call.getObject("audio") { player.setAudio(Self.audioSettings(from: audio)) }
         player.play(from: call.getInt("startIndex") ?? 0)
         call.resolve(["ok": true, "count": items.count])
+    }
+
+    private static func audioSettings(from d: [String: Any]) -> NativePlayer.AudioSettings {
+        var s = NativePlayer.AudioSettings()
+        if let v = (d["volume"] as? NSNumber)?.floatValue { s.volume = min(max(0, v), 1) }
+        if let v = (d["pitch"] as? NSNumber)?.floatValue { s.pitchCents = min(max(-1200, v), 1200) }
+        if let v = (d["gapSentence"] as? NSNumber)?.doubleValue { s.gapSentence = min(max(0, v), 3) }
+        if let v = (d["gapComma"] as? NSNumber)?.doubleValue { s.gapComma = min(max(0, v), 2) }
+        if let v = (d["gapParagraph"] as? NSNumber)?.doubleValue { s.gapParagraph = min(max(0, v), 5) }
+        return s
+    }
+
+    @objc func ttsSetAudio(_ call: CAPPluginCall) {
+        var d: [String: Any] = [:]
+        for k in ["volume", "pitch", "gapSentence", "gapComma", "gapParagraph"] {
+            if let v = call.getDouble(k) { d[k] = v }
+        }
+        player.setAudio(Self.audioSettings(from: d))
+        call.resolve(["ok": true])
     }
 
     @objc func ttsPause(_ call: CAPPluginCall) { player.pause(); call.resolve(["ok": true]) }

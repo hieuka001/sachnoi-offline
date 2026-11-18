@@ -137,10 +137,15 @@ export function normalizeForSpeech(rawText, opts = {}) {
   t = t.replace(/\b\d+\.\d{1,2}\b/g, (m) => numericTokenToWords(m));
   t = t.replace(/\b\d+\b/g, (m) => numberToVietnamese(m));
 
+  // Ký hiệu § (tiết/mục trong sách): "§II" -> "mục hai", "§3" -> "mục ba"
+  t = t.replace(/§\s*([IVXLCDM]{1,7})(?![\p{L}\d])/gu, (_, r) => (isRoman(r) ? `mục ${numberToVietnamese(romanToInt(r))}` : `mục ${r}`));
+  t = t.replace(/§\s*(\d+)/g, (_, n) => `mục ${numberToVietnamese(n)}`);
+  t = t.replace(/§/g, "mục");
+
   // Số La Mã theo ngữ cảnh + đứng độc lập (trước bước đánh vần chữ hoa)
-  t = t.replace(/\b(thế kỷ|chương|phần|tập|mục)\s+([IVXLCDM]{1,7})\b/gi, (_, w, r) =>
+  t = t.replace(/(?<![\p{L}\d])(thế kỷ|chương|phần|tập|mục)\s+([IVXLCDM]{1,7})(?![\p{L}\d])/giu, (_, w, r) =>
     isRoman(r.toUpperCase()) ? `${w.toLowerCase()} ${numberToVietnamese(romanToInt(r.toUpperCase()))}` : _);
-  t = t.replace(/\b([IVXLCDM]{2,7})\b/g, (m) => (isRoman(m) ? numberToVietnamese(romanToInt(m)) : m));
+  t = t.replace(/(?<![\p{L}\d])([IVXLCDM]{2,7})(?![\p{L}\d])/gu, (m) => (isRoman(m) ? numberToVietnamese(romanToInt(m)) : m));
 
   // Viết tắt (bỏ qua key 1 ký tự và key đã xử lý riêng: Q, P, tr)
   const abbrKeys = Object.keys(ABBREVIATIONS).filter((k) => k.length > 1 && k !== "tr").sort((a, b) => b.length - a.length);
@@ -167,11 +172,13 @@ export function normalizeForSpeech(rawText, opts = {}) {
   t = t.replace(/\s\+\s/g, " cộng ").replace(/\s=\s/g, " bằng ")
    .replace(/\s×\s/g, " nhân ").replace(/\s÷\s/g, " chia ");
 
-  // Chữ hoa viết tắt chưa có trong từ điển (2-6 ký tự): đánh vần từng chữ cái
-  t = t.replace(/\b[A-ZÀ-Ỹ]{2,6}\b/g, (m) => {
-    if (/[À-Ỹ]/.test(m) && !/^[A-Z]+$/.test(m)) return m; // từ Việt viết hoa đầu câu kiểu đặc biệt — giữ nguyên
-    return m.split("").map((c) => LETTER_NAMES[c.toLowerCase()] ?? c).join(" ");
-  });
+  // Chữ IN HOA trong sách tiếng Việt phần lớn là từ nhấn mạnh/tiêu đề (ĐẠO,
+  // VŨ TRỤ, NAY, DO, AI...) — phải đọc THÀNH TỪ, không đánh vần. Chỉ đánh vần
+  // một danh sách ngắn viết tắt nước ngoài quen thuộc; còn lại giữ nguyên để
+  // bước hạ chữ thường ở cuối biến thành từ thường cho engine đọc.
+  const SPELL_OUT = new Set(["FBI", "CIA", "NASA", "NATO", "USB", "DVD", "CEO", "GDP", "HIV", "AIDS", "KGB", "BBC", "CNN", "DNA", "RNA", "ATM", "GPS", "LED", "LCD", "SIM", "WIFI"]);
+  t = t.replace(/(?<![\p{L}\d])[A-Z]{2,6}(?![\p{L}\d])/gu, (m) =>
+    SPELL_OUT.has(m) ? m.split("").map((c) => LETTER_NAMES[c.toLowerCase()] ?? c).join(" ") : m);
   // Công thức hoá học còn sót kiểu NaCl2 / Fe2O3: tách chữ-số đánh vần
   t = t.replace(/\b(?:[A-Z][a-z]?\d*){2,}\b/g, (m) => {
     if (!/\d/.test(m)) return m;

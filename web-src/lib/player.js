@@ -28,8 +28,31 @@ export class Player {
     // JS chỉ nhận sự kiện để highlight/lưu tiến độ. null = chưa dò, false = không có.
     this.nativePlayer = null;
     this._nativeKey = null;
+    // Tuỳ chỉnh âm thanh (1.0.6): âm lượng %, tông giọng (bán âm), khoảng nghỉ
+    // sau câu/dấu phẩy/xuống đoạn (giây) — lưu trên máy, áp cho cả 2 đường phát.
+    this.audioSettings = Player.loadAudioSettings();
+    this.audio.volume = this.audioSettings.volume / 100;
     this._probeNativePlayer();
     this._wireNativeEvents();
+  }
+
+  static loadAudioSettings() {
+    const defaults = { volume: 100, pitch: 0, gapSentence: 0.25, gapComma: 0, gapParagraph: 0.8 };
+    try { return { ...defaults, ...JSON.parse(localStorage.getItem("sachnoi.audioSettings") || "{}") }; }
+    catch { return defaults; }
+  }
+
+  _nativeAudio() {
+    const s = this.audioSettings;
+    return { volume: s.volume / 100, pitch: s.pitch * 100, gapSentence: s.gapSentence, gapComma: s.gapComma, gapParagraph: s.gapParagraph };
+  }
+
+  setAudioSettings(patch) {
+    Object.assign(this.audioSettings, patch);
+    try { localStorage.setItem("sachnoi.audioSettings", JSON.stringify(this.audioSettings)); } catch {}
+    if (this.audio) this.audio.volume = this.audioSettings.volume / 100;
+    const bridge = native();
+    if (this.nativePlayer && bridge?.ttsSetAudio) bridge.ttsSetAudio(this._nativeAudio()).catch(() => {});
   }
 
   _probeNativePlayer() {
@@ -41,7 +64,7 @@ export class Player {
   }
 
   _nativeItems() {
-    return this.sentences.map((s) => ({ t: s.spoken, c: s.chapterTitle || "" }));
+    return this.sentences.map((s) => ({ t: s.spoken, c: s.chapterTitle || "", p: !!s.paraEnd }));
   }
 
   /** Dựng danh sách câu cho cả sách (theo chương), áp từ điển cá nhân của sách. */
@@ -54,7 +77,7 @@ export class Player {
       const ch = extracted.chapters[ci];
       for (const para of ch.paragraphs) {
         const { sentences } = prepareForSpeech(para, { bookDict });
-        for (const s of sentences) this.sentences.push({ ...s, chapterIndex: ci, chapterTitle: ch.title });
+        sentences.forEach((s, si) => this.sentences.push({ ...s, chapterIndex: ci, chapterTitle: ch.title, paraEnd: si === sentences.length - 1 }));
       }
       if (ci % 5 === 0) { this.onProgress(Math.round(((ci + 1) / total) * 100)); await tick(); }
     }
@@ -77,6 +100,7 @@ export class Player {
         await bridge.ttsPlay({
           items: this._nativeItems(), startIndex: this.index, voice: this.voice,
           title: this.book?.title || "", author: this.book?.author || "",
+          audio: this._nativeAudio(),
         }).catch(() => {});
         bridge.ttsSetRate?.({ rate: this.speed }).catch(() => {});
       } else {
@@ -177,6 +201,7 @@ export class Player {
       if (url) {
         this.audio.src = url;
         this.audio.playbackRate = this.speed;
+        this.audio.volume = this.audioSettings.volume / 100;
         await this.audio.play();
       } else {
         this.speakFallback(s.spoken, seq);
@@ -212,6 +237,8 @@ export class Player {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "vi-VN";
     u.rate = this.speed;
+    u.volume = this.audioSettings.volume / 100;
+    u.pitch = Math.min(2, Math.max(0.5, Math.pow(2, this.audioSettings.pitch / 12)));
     const v = window.speechSynthesis.getVoices().find((x) => x.lang?.startsWith("vi"));
     if (v) u.voice = v;
     u.onend = () => { if (seq === this._synthSeq) this.handleEnded(); };

@@ -57,6 +57,27 @@ $("sleepSelect").addEventListener("change", (e) => {
 });
 $("voiceSelect").addEventListener("change", (e) => { state.player.setVoice(e.target.value); });
 
+// Panel Âm thanh (1.0.6): âm lượng / tông giọng / khoảng nghỉ
+$("audioBtn").addEventListener("click", () => $("audioPanel").classList.toggle("hidden"));
+(function initAudioPanel() {
+  const s = state.player.audioSettings;
+  const bind = (id, valId, key, fmt) => {
+    const el = $(id);
+    el.value = s[key];
+    $(valId).textContent = fmt(s[key]);
+    el.addEventListener("input", () => {
+      const v = parseFloat(el.value);
+      $(valId).textContent = fmt(v);
+      state.player.setAudioSettings({ [key]: v });
+    });
+  };
+  bind("setVolume", "setVolumeVal", "volume", (v) => `${v}%`);
+  bind("setPitch", "setPitchVal", "pitch", (v) => (v > 0 ? `+${v}` : `${v}`));
+  bind("setGapSentence", "setGapSentenceVal", "gapSentence", (v) => `${v.toFixed(2)}s`);
+  bind("setGapComma", "setGapCommaVal", "gapComma", (v) => `${v.toFixed(2)}s`);
+  bind("setGapPara", "setGapParaVal", "gapParagraph", (v) => `${v.toFixed(1)}s`);
+})();
+
 // ---------- Thư viện ----------
 function progressPct(pr) {
   if (!pr || !pr.totalSentences) return 0;

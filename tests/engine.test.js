@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { numberToVietnamese, splitSentences, chunkSentences, prepareForSpeech } from "../src/text-engine/index.js";
+import { numberToVietnamese, splitSentences, chunkSentences, prepareForSpeech, normalizeForSpeech } from "../src/text-engine/index.js";
 
 test("số: bảng biến âm cốt lõi", () => {
   const cases = {
@@ -35,4 +35,28 @@ test("pipeline: câu mẫu tích hợp", () => {
   assert.equal(sentences.length, 1);
   assert.match(sentences[0].spoken, /hai mươi lăm tháng mười hai/);
   assert.match(sentences[0].spoken, /mi li mét thủy ngân/);
+});
+
+test("chữ IN HOA: đọc thành từ, không đánh vần, không nuốt vào số La Mã", () => {
+  const cases = {
+    "MỤC LỤC": "mục lục",
+    "DO AI VIẾT?": "do ai viết?",
+    "VŨ TRỤ": "vũ trụ",
+    "ĐỜI SỐNG VÀ TÁC PHẨM": "đời sống và tác phẩm",
+    "BẢN LÃO TỬ LƯU HÀNH NGÀY NAY": "bản lão tử lưu hành ngày nay",
+  };
+  for (const [input, expected] of Object.entries(cases)) {
+    assert.equal(normalizeForSpeech(input), expected, input);
+  }
+});
+
+test("số La Mã đúng ngữ cảnh, § đọc là mục", () => {
+  assert.equal(normalizeForSpeech("Thế kỷ XVI"), "thế kỷ mười sáu");
+  assert.equal(normalizeForSpeech("Chương III"), "chương ba");
+  assert.equal(normalizeForSpeech("§II. TÍNH CÁCH"), "mục hai. tính cách");
+  assert.equal(normalizeForSpeech("PHẦN I"), "phần một");
+});
+
+test("viết tắt nước ngoài quen thuộc vẫn đánh vần", () => {
+  assert.match(normalizeForSpeech("FBI mở hồ sơ"), /ép bi ai/);
 });

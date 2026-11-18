@@ -2,10 +2,10 @@
 // mục lục kiểu Đạo Đức Kinh (Nguyễn Hiến Lê) nhưng KHÔNG được nuốt chương thật.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isTocLikeChapter, isCoverLikeChapter, EXTRACT_VERSION } from "../web-src/lib/extract.js";
+import { isTocLikeChapter, isCoverLikeChapter, isTocLikeText, EXTRACT_VERSION } from "../web-src/lib/extract.js";
 
 test("extractVersion là số nguyên >= 2", () => {
-  assert.ok(Number.isInteger(EXTRACT_VERSION) && EXTRACT_VERSION >= 2);
+  assert.ok(Number.isInteger(EXTRACT_VERSION) && EXTRACT_VERSION >= 3);
 });
 
 test("mục lục Đạo Đức Kinh (không số trang) bị nhận diện", () => {
@@ -88,4 +88,20 @@ test("chương mở đầu thật (đoạn dài) KHÔNG bị coi là bìa", () =
     "Trong bản dịch này, chúng tôi cố gắng giữ sát nguyên văn chữ Hán, đồng thời chú thích những chỗ khó để độc giả tiện theo dõi và đối chiếu với các bản dịch trước đây của nhiều dịch giả uy tín.",
   ];
   assert.equal(isCoverLikeChapter(firstChapter), false);
+});
+
+
+test("mục lục dạng văn xuôi chảy (1 đoạn dồn, kiểu Đạo Đức Kinh) bị nhận diện", () => {
+  const flowing = ["MỤC LỤC: Vài lời thưa trước PHẦN I. ĐỜI SỐNG VÀ TÁC PHẨM §I. ĐỜI SỐNG 1. Sự tích Lão tử 2. Quê quán 3. Tên họ 4. Chức tước 5. Lão tử với Khổng tử có gặp nhau không? 6. Lão tử có phải là Lão Lai tử không? 7. Tuổi thọ §II. TÁC PHẨM A. XUẤT HIỆN THỜI NÀO? 1. Về nội dung 2. Về hình thức 3. Dư Bồi Lâm còn đưa ra lí do này nữa B. DO AI VIẾT? C. BẢN LÃO TỬ LƯU HÀNH NGÀY NAY D. CÁC BẢN CHÚ THÍCH PHẦN II. HỌC THUYẾT §I. ĐẠO VÀ ĐỨC A. ĐẠO: BẢN NGUYÊN CỦA VŨ TRỤ B. ĐỨC: SỰ TRƯỞNG THÀNH CỦA VẠN VẬT §II. TÍNH CÁCH VÀ QUI LUẬT CỦA ĐẠO a) Phác b) Tự nhiên c) Luật Phản phục"];
+  assert.equal(isTocLikeText(flowing), true);
+});
+
+test("chương thật có liệt kê đánh số KHÔNG bị coi là mục lục chảy", () => {
+  const chapter = ["Trong chương này chúng ta sẽ điểm qua toàn bộ quá trình hình thành và phát triển của học thuyết, từ những ngày đầu còn phôi thai cho tới khi nó trở thành một hệ thống tư tưởng hoàn chỉnh có ảnh hưởng sâu rộng. 1. Giai đoạn đầu tiên kéo dài rất lâu với nhiều biến động lớn lao của thời cuộc và những tranh luận gay gắt giữa các trường phái đối lập nhau về cả phương pháp lẫn mục đích cuối cùng. 2. Giai đoạn thứ hai chứng kiến sự trưởng thành vượt bậc khi các tác phẩm lớn lần lượt ra đời, đặt nền móng vững chắc cho những thế hệ học giả về sau tiếp tục đào sâu nghiên cứu và phát triển thêm nhiều khía cạnh mới mẻ chưa từng được đề cập tới trước đây trong bất kỳ tài liệu nào."];
+  assert.equal(isTocLikeText(chapter), false);
+});
+
+test("đoạn văn thường không bị coi là mục lục chảy", () => {
+  const prose = ["Đạo khả đạo phi thường đạo, danh khả danh phi thường danh. Vô danh thiên địa chi thủy, hữu danh vạn vật chi mẫu. Cố thường vô dục dĩ quan kỳ diệu, thường hữu dục dĩ quan kỳ kiếu. Thử lưỡng giả đồng xuất nhi dị danh, đồng vị chi huyền, huyền chi hựu huyền, chúng diệu chi môn."];
+  assert.equal(isTocLikeText(prose), false);
 });
