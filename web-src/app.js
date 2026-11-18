@@ -50,7 +50,11 @@ state.player = new Player({
     $("playBtn").textContent = playing ? "⏸" : "▶";
     $("npPlayBtn").textContent = playing ? "⏸" : "▶";
   },
-  onProgress: (pct) => { $("playerProgress").textContent = `Đang chuẩn bị sách… ${pct}%`; },
+  onProgress: (pct) => {
+    $("playerProgress").textContent = `Đang chuẩn bị sách… ${pct}%`;
+    const st = $("openStatus");
+    if (st) st.textContent = `Đang chuẩn bị sách… ${pct}%`;
+  },
 });
 function togglePlay() {
   const p = state.player;
@@ -367,62 +371,82 @@ $("restoreInput").addEventListener("change", async (e) => {
 });
 
 // ---------- Đọc ----------
+let openingBook = false;
 async function openBook(id, autoplay = false) {
-  const books = await store.listBooks();
-  const meta = books.find((b) => b.id === id);
-  if (!meta) return;
-  state.book = meta;
-  const progress = await store.getProgress(id);
-  let extracted = progress?.extractedCache;
-  // Cache trích bằng logic cũ (vd còn bìa/mục lục) -> trích lại từ file gốc.
-  // Chỉ số câu toàn cục đã đổi nên tiến độ nghe của sách này quay về đầu.
-  const cacheStale = !!extracted && (extracted.extractVersion || 1) !== EXTRACT_VERSION;
-  let startSentence = progress?.sentenceIndex || 0;
-  if (!extracted || cacheStale) {
-    const blob = await store.getBlob(id);
-    if (!blob) {
-      if (!extracted) { alert("Không tìm thấy file sách trên máy."); return; }
-    } else {
-      extracted = await extractBook(new File([blob], meta.title + "." + meta.format), makeExtractOpts($("readerTitle")));
-      if (extracted.coverBlob) { await store.putCover(id, extracted.coverBlob).catch(() => {}); delete extracted.coverBlob; }
-      if (cacheStale) startSentence = 0;
-      await store.setProgress(id, { extractedCache: extracted, sentenceIndex: startSentence });
-      if (extracted.chapters.length !== meta.chapters) {
-        meta.chapters = extracted.chapters.length;
-        await store.updateBook(id, { chapters: extracted.chapters.length });
+  if (openingBook) return;
+  openingBook = true;
+  const setStatus = (msg) => { const el = $("openStatus"); if (el) el.textContent = msg || ""; };
+  try {
+    const books = await store.listBooks();
+    const meta = books.find((b) => b.id === id);
+    if (!meta) return;
+    state.book = meta;
+    // 1.9.1: chuyển sang màn hình đọc NGAY và hiện trạng thái từng bước.
+    // Trước đây trích xuất + dựng câu chạy xong mới chuyển màn hình, lại không
+    // có dòng trạng thái nào — mở sách lớn trông y như app treo.
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+    $("view-reader").classList.add("active");
+    $("readerTitle").textContent = meta.title;
+    setStatus("Đang mở sách…");
+    const progress = await store.getProgress(id);
+    let extracted = progress?.extractedCache;
+    // Cache trích bằng logic cũ (vd còn bìa/mục lục) -> trích lại từ file gốc.
+    // Chỉ số câu toàn cục đã đổi nên tiến độ nghe của sách này quay về đầu.
+    const cacheStale = !!extracted && (extracted.extractVersion || 1) !== EXTRACT_VERSION;
+    let startSentence = progress?.sentenceIndex || 0;
+    if (!extracted || cacheStale) {
+      const blob = await store.getBlob(id);
+      if (!blob) {
+        if (!extracted) { setStatus(""); alert("Không tìm thấy file sách trên máy."); return; }
+      } else {
+        setStatus("Đang trích xuất sách…");
+        extracted = await extractBook(new File([blob], meta.title + "." + meta.format), makeExtractOpts($("openStatus")));
+        if (extracted.coverBlob) { await store.putCover(id, extracted.coverBlob).catch(() => {}); delete extracted.coverBlob; }
+        if (cacheStale) startSentence = 0;
+        await store.setProgress(id, { extractedCache: extracted, sentenceIndex: startSentence });
+        if (extracted.chapters.length !== meta.chapters) {
+          meta.chapters = extracted.chapters.length;
+          await store.updateBook(id, { chapters: extracted.chapters.length });
+        }
       }
     }
+    state.extracted = extracted;
+    $("readerTitle").textContent = extracted.title;
+    $("scanWarn").classList.toggle("hidden", !extracted.scanned);
+    $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
+    setStatus("Đang chuẩn bị sách…");
+    await state.player.load(meta, extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(id)), progress?.spokenCache);
+    // 1.7.0: cache câu đã chuẩn hoá vừa dựng mới (lần mở đầu / từ điển đổi /
+    // trích lại) thì lưu lại để lần sau mở nhanh; cache trúng thì khỏi ghi.
+    if (state.player.lastSpokenCache && !state.player.spokenCacheHit) {
+      await store.setProgress(id, { spokenCache: state.player.lastSpokenCache });
+    }
+    $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
+    $("seekSlider").value = String(Math.max(0, startSentence));
+    $("npSeek").max = String(Math.max(0, state.player.sentences.length - 1));
+    $("npSeek").value = String(Math.max(0, startSentence));
+    loadNowPlayingCover();
+    refreshNowPlaying(startSentence > 0 ? startSentence : -1, state.player.sentences[startSentence]);
+    state.bookmarks = await store.listBookmarks(id);
+    renderBookmarks();
+    refreshBmBtn();
+    // Tìm chương chứa câu đã nghe dở
+    let startChapter = 0;
+    for (let i = 0; i < state.player.sentences.length; i++) { if (i === startSentence) { startChapter = state.player.sentences[i].chapterIndex; break; } }
+    state.player.index = startSentence > 0 ? startSentence : -1;
+    showChapter(startChapter);
+    $("playerBar").classList.remove("hidden");
+    $("playerTitle").textContent = extracted.title;
+    if (startSentence > 0) $("playerProgress").textContent = `Đã nghe tới câu ${startSentence + 1} — bấm ▶ để nghe tiếp.`;
+    setStatus("");
+    if (autoplay) state.player.play(startSentence);
+  } catch (err) {
+    // Lỗi phải HIỆN rõ thay vì màn hình chết im lặng như trước
+    setStatus("");
+    $("readerBody").innerHTML = `<p class="warn">Không mở được sách: ${escapeHtml(err?.message || String(err))}</p>`;
+  } finally {
+    openingBook = false;
   }
-  state.extracted = extracted;
-  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-  $("view-reader").classList.add("active");
-  $("readerTitle").textContent = extracted.title;
-  $("scanWarn").classList.toggle("hidden", !extracted.scanned);
-  $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
-  await state.player.load(meta, extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(id)), progress?.spokenCache);
-  // 1.7.0: cache câu đã chuẩn hoá vừa dựng mới (lần mở đầu / từ điển đổi /
-  // trích lại) thì lưu lại để lần sau mở nhanh; cache trúng thì khỏi ghi.
-  if (state.player.lastSpokenCache && !state.player.spokenCacheHit) {
-    await store.setProgress(id, { spokenCache: state.player.lastSpokenCache });
-  }
-  $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
-  $("seekSlider").value = String(Math.max(0, startSentence));
-  $("npSeek").max = String(Math.max(0, state.player.sentences.length - 1));
-  $("npSeek").value = String(Math.max(0, startSentence));
-  loadNowPlayingCover();
-  refreshNowPlaying(startSentence > 0 ? startSentence : -1, state.player.sentences[startSentence]);
-  state.bookmarks = await store.listBookmarks(id);
-  renderBookmarks();
-  refreshBmBtn();
-  // Tìm chương chứa câu đã nghe dở
-  let acc = 0, startChapter = 0;
-  for (let i = 0; i < state.player.sentences.length; i++) { if (i === startSentence) { startChapter = state.player.sentences[i].chapterIndex; break; } }
-  state.player.index = startSentence > 0 ? startSentence : -1;
-  showChapter(startChapter);
-  $("playerBar").classList.remove("hidden");
-  $("playerTitle").textContent = extracted.title;
-  if (startSentence > 0) $("playerProgress").textContent = `Đã nghe tới câu ${startSentence + 1} — bấm ▶ để nghe tiếp.`;
-  if (autoplay) state.player.play(startSentence);
 }
 
 // ---------- Lịch sử nghe ----------

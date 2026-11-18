@@ -3,7 +3,7 @@
 // Trong app iOS: giọng VieNeu native. Trên trình duyệt (dev): rơi về giọng hệ thống.
 
 import { prepareForSpeech, cleanupText, splitSentences } from "../text-engine/index.js";
-import { buildBookSentences } from "./spokenCache.js";
+import { buildBookSentencesAsync } from "./spokenCache.js";
 import { EXTRACT_VERSION } from "./extract.js";
 
 export const native = () => window.Capacitor?.Plugins?.SachNoiBridge ?? null;
@@ -86,9 +86,9 @@ export class Player {
   async load(book, extracted, bookDict = {}, spokenCache = null) {
     this.stop();
     this.book = { id: book.id, title: extracted.title, author: extracted.author };
-    const { sentences, cache, hit } = buildBookSentences(extracted, bookDict, spokenCache, EXTRACT_VERSION, {
+    const { sentences, cache, hit } = await buildBookSentencesAsync(extracted, bookDict, spokenCache, EXTRACT_VERSION, {
       cleanupText, splitSentences, prepareForSpeech,
-    });
+    }, (pct) => this.onProgress(pct));
     this.sentences = sentences;
     const pb = buildPlaybackItems(this.sentences);
     this.playItems = pb.items;

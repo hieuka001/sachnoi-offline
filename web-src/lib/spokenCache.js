@@ -44,7 +44,7 @@ function findDropped(originals, kept) {
  * @returns {{ sentences: Array<{original, spoken, chapterIndex, chapterTitle, paraEnd}>, cache: object, hit: boolean }}
  * hit=true khi mọi đoạn đều khôi phục từ cache (không chạy chuẩn hoá lần nào).
  */
-export function buildBookSentences(extracted, bookDict = {}, cache = null, extractVersion = 0, engine) {
+function* buildGen(extracted, bookDict, cache, extractVersion, engine) {
   const { cleanupText, splitSentences, prepareForSpeech } = engine;
   const dk = dictKey(bookDict);
   const cacheOk =
@@ -58,6 +58,7 @@ export function buildBookSentences(extracted, bookDict = {}, cache = null, extra
   const paras = [];
   let hit = cacheOk;
   let pi = 0;
+  let lastYield = Date.now();
   for (let ci = 0; ci < (extracted?.chapters || []).length; ci++) {
     const ch = extracted.chapters[ci];
     for (const para of ch.paragraphs || []) {
@@ -97,6 +98,8 @@ export function buildBookSentences(extracted, bookDict = {}, cache = null, extra
       }
       if (sentences.length > startIdx) sentences[sentences.length - 1].paraEnd = true;
       pi++;
+      // Nhường luồng UI mỗi ~24ms (bản async dùng; bản sync bỏ qua yield).
+      if (Date.now() - lastYield >= 24) { lastYield = Date.now(); yield pi; }
     }
   }
   return {
@@ -104,4 +107,28 @@ export function buildBookSentences(extracted, bookDict = {}, cache = null, extra
     cache: { v: SPOKEN_CACHE_VERSION, ev: extractVersion, dk, paras },
     hit,
   };
+}
+
+export function buildBookSentences(extracted, bookDict = {}, cache = null, extractVersion = 0, engine) {
+  const g = buildGen(extracted, bookDict, cache, extractVersion, engine);
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+
+/// Bản bất đồng bộ (1.9.1): dựng câu theo lát, nhường UI + báo % tiến độ.
+/// Trước đây dựng ĐỒNG BỘ toàn sách: cache trượt trên sách lớn là đóng băng
+/// màn hình mở sách hàng chục giây, không một dòng trạng thái (thanh phát —
+/// nơi hiện % — vẫn đang ẩn) nên trông như app treo.
+export async function buildBookSentencesAsync(extracted, bookDict = {}, cache = null, extractVersion = 0, engine, onProgress) {
+  const total = Math.max(1, totalParas(extracted));
+  const g = buildGen(extracted, bookDict, cache, extractVersion, engine);
+  let r = g.next();
+  while (!r.done) {
+    onProgress?.(Math.min(99, Math.round((r.value / total) * 100)));
+    await new Promise((res) => setTimeout(res, 0));
+    r = g.next();
+  }
+  onProgress?.(100);
+  return r.value;
 }
