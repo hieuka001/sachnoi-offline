@@ -345,11 +345,11 @@ function runSearch() {
   const box = $("searchResults");
   if (q.length < 2) { box.innerHTML = `<p class="muted">Nhập ít nhất 2 ký tự.</p>`; return; }
   const hits = [];
+  let total = 0;
   state.player.sentences.forEach((s, i) => {
-    if (hits.length >= 100) return;
-    if (foldText(s.original).includes(q)) hits.push(i);
+    if (foldText(s.original).includes(q)) { total++; if (hits.length < 100) hits.push(i); }
   });
-  box.innerHTML = hits.length ? `<p class="muted">${hits.length} kết quả — chạm để nghe từ câu đó:</p>` + hits.map((i) => {
+  box.innerHTML = hits.length ? `<p class="muted">${total > hits.length ? `${hits.length}+` : total} kết quả${total > hits.length ? ` (hiện 100 đầu)` : ""} — chạm để nghe từ câu đó:</p>` + hits.map((i) => {
     const s = state.player.sentences[i];
     return `<div class="hit" data-hit="${i}"><div class="where">${escapeHtml(s.chapterTitle || "")} · Câu ${i + 1}</div><div class="snip">${escapeHtml(s.original.slice(0, 160))}</div></div>`;
   }).join("") : `<p class="muted">Không tìm thấy “${escapeHtml($("searchInput").value.trim())}” trong sách này.</p>`;

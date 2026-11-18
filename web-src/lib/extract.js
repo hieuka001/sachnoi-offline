@@ -4,7 +4,10 @@
 
 // Tăng số này mỗi khi logic trích thay đổi: sách đã lưu cache cũ sẽ được trích
 // lại từ file gốc ở lần mở kế tiếp (xem openBook trong app.js).
-export const EXTRACT_VERSION = 3;
+// 1.1.1: sửa lỗi 1.1.0 — commit 1.1.0 ghi EXTRACT_VERSION=4 nhưng code vẫn là 3,
+// nên sách đã trích ở 1.0.6 KHÔNG BAO GIỜ trích lại: bộ lọc bìa/mục lục PDF và
+// OCR-khi-mở-lại cho sách scan đã lưu đều không chạy. Tăng lên 4 thật để kích hoạt.
+export const EXTRACT_VERSION = 4;
 
 export async function extractBook(file, opts = {}) {
   const name = file.name || "sach";
@@ -152,10 +155,25 @@ async function extractEpub(file, name) {
   return { title, author, chapters: finalChapters, scanned: false, extractVersion: EXTRACT_VERSION };
 }
 
+// Gộp các dòng OCR thành đoạn: dòng không kết thúc bằng dấu câu + dòng sau
+// viết thường thì nối tiếp, còn lại xuống đoạn mới.
+// Dấu ":" và ";" KHÔNG kết thúc câu (vd "Lão Tử nói:" rồi xuống dòng) nên vẫn
+// nối tiếp; chỉ ". ! ? …" và dấu đóng ngoặc/kép mới cắt đoạn.
+export function mergeOcrLines(lines) {
+  const paragraphs = [];
+  for (const rawLine of lines) {
+    const line = String(rawLine).trim();
+    if (!line) continue;
+    const prev = paragraphs[paragraphs.length - 1];
+    if (prev && !/[.!?…\u201d"]$/.test(prev) && /^[a-z\u00e0-\u1ef9\u0111]/.test(line)) {
+      paragraphs[paragraphs.length - 1] = prev + " " + line;
+    } else paragraphs.push(line);
+  }
+  return paragraphs;
+}
+
 // ---------- PDF ----------
 // OCR từng trang PDF scan: vẽ trang ra canvas (pdf.js) rồi nhờ native nhận chữ.
-// Gộp dòng thành đoạn: dòng không kết thúc bằng dấu câu + dòng sau viết thường
-// thì nối tiếp, còn lại xuống đoạn mới.
 async function ocrPdfPages(pdf, opts) {
   const chapters = [];
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -171,13 +189,7 @@ async function ocrPdfPages(pdf, opts) {
     if (!blob) continue;
     const raw = (await opts.ocr(blob)) || "";
     const lines = raw.split("\n").map((x) => x.trim()).filter(Boolean);
-    const paragraphs = [];
-    for (const line of lines) {
-      const prev = paragraphs[paragraphs.length - 1];
-      if (prev && !/[.!?…:;”"]$/.test(prev) && /^[a-zà-ỹ]/.test(line)) {
-        paragraphs[paragraphs.length - 1] = prev + " " + line;
-      } else paragraphs.push(line);
-    }
+    const paragraphs = mergeOcrLines(lines);
     if (opts.onProgress) opts.onProgress(Math.round((p / pdf.numPages) * 100), `Đang nhận dạng chữ (OCR) trang ${p}/${pdf.numPages}…`);
     if (paragraphs.length) chapters.push({ title: `Trang ${p}`, paragraphs });
   }

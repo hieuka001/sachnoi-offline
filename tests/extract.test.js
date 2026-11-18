@@ -2,10 +2,38 @@
 // mục lục kiểu Đạo Đức Kinh (Nguyễn Hiến Lê) nhưng KHÔNG được nuốt chương thật.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isTocLikeChapter, isCoverLikeChapter, isTocLikeText, EXTRACT_VERSION } from "../web-src/lib/extract.js";
+import { isTocLikeChapter, isCoverLikeChapter, isTocLikeText, mergeOcrLines, EXTRACT_VERSION } from "../web-src/lib/extract.js";
 
 test("extractVersion là số nguyên >= 2", () => {
-  assert.ok(Number.isInteger(EXTRACT_VERSION) && EXTRACT_VERSION >= 3);
+  assert.ok(Number.isInteger(EXTRACT_VERSION) && EXTRACT_VERSION >= 4);
+});
+
+// 1.1.1: 1.1.0 ghi EXTRACT_VERSION=4 trong commit nhưng code vẫn là 3 —
+// sách trích ở 1.0.6 không bao giờ trích lại nên bộ lọc PDF + OCR-khi-mở-lại
+// đều chết. Test này khóa đúng số 4.
+test("extractVersion phải là 4 (bộ lọc PDF + OCR mở lại ở 1.1.0)", () => {
+  assert.equal(EXTRACT_VERSION, 4);
+});
+
+test("gộp dòng OCR: dòng sau dấu hai chấm vẫn nối tiếp (không cắt câu)", () => {
+  assert.deepEqual(
+    mergeOcrLines(["Lão Tử nói:", "đạo khả đạo, phi thường đạo."]),
+    ["Lão Tử nói: đạo khả đạo, phi thường đạo."]
+  );
+});
+
+test("gộp dòng OCR: dòng sau dấu chấm dứt câu thì xuống đoạn mới", () => {
+  assert.deepEqual(
+    mergeOcrLines(["Đạo khả đạo.", "Danh khả danh, phi thường danh."]),
+    ["Đạo khả đạo.", "Danh khả danh, phi thường danh."]
+  );
+});
+
+test("gộp dòng OCR: dòng tiếp theo viết thường mà không có dấu câu thì nối", () => {
+  assert.deepEqual(
+    mergeOcrLines(["Thiên hạ đều biết cái đẹp", "là đẹp thì đã có cái xấu."]),
+    ["Thiên hạ đều biết cái đẹp là đẹp thì đã có cái xấu."]
+  );
 });
 
 test("mục lục Đạo Đức Kinh (không số trang) bị nhận diện", () => {
