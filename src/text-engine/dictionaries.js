@@ -60,7 +60,7 @@ export const UNITS = {
   "Hz": "héc", "kHz": "ki lô héc", "MHz": "mê ga héc", "GHz": "gi ga héc",
   "kW": "ki lô oát", "MW": "mê ga oát", "kWh": "ki lô oát giờ",
   "V": "vôn", "A": "am pe", "W": "oát", "J": "giun", "N": "niu tơn", "Pa": "pát can",
-  "g": "gam", "l": "lít", "L": "lít", "s": "giây", "ms": "mi li giây",
+  "g": "gam", "l": "lít", "L": "lít", "s": "giây", "m": "mét", "ms": "mi li giây",
   "kcal": "ki lô ca lo", "cal": "ca lo", "IU": "đơn vị quốc tế",
   "VND": "đồng", "USD": "đô la mỹ", "EUR": "ơ rô", "JPY": "yên nhật", "GBP": "bảng anh",
 };

@@ -5,6 +5,7 @@ import { Player, native, isNative } from "./lib/player.js";
 import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
 import { buildBackup, parseBackup } from "./lib/backup.js";
 import { computeListeningStats, formatDuration, isFinished } from "./lib/stats.js";
+import { filterBooks, sortBooks } from "./lib/library.js";
 import { loadGlobalDict, saveGlobalDict, mergeDicts } from "./lib/dict.js";
 import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
 
@@ -102,9 +103,13 @@ function progressPct(pr) {
 }
 
 async function renderLibrary() {
-  const books = await store.listBooks();
+  const allBooks = await store.listBooks();
   const progressMap = new Map((await store.listProgress()).map((pr) => [pr.bookId, pr]));
+  const books = sortBooks(filterBooks(allBooks, libQuery), progressMap, libSort);
   $("emptyLib").style.display = books.length ? "none" : "block";
+  $("emptyLib").textContent = allBooks.length
+    ? `Không tìm thấy sách nào khớp “${libQuery.trim()}”.`
+    : "Chưa có sách nào. Bấm “Thêm sách” để chọn file EPUB, PDF hoặc TXT trên máy — sách chỉ lưu trong máy này.";
   $("bookGrid").innerHTML = books.map((b) => {
     const pr = progressMap.get(b.id);
     const pct = progressPct(pr);
@@ -142,6 +147,21 @@ async function renderLibrary() {
     if (confirm("Xoá sách này khỏi máy?")) { await store.deleteBook(el.dataset.del); renderLibrary(); }
   }));
 }
+
+// Tìm kiếm + sắp xếp thư viện (1.5.0): lựa chọn sắp xếp lưu trên máy.
+let libQuery = "";
+let libSort = "recent";
+try {
+  const s = localStorage.getItem("sachnoi-lib-sort");
+  if (["recent", "title", "progress"].includes(s)) libSort = s;
+} catch {}
+$("libSort").value = libSort;
+$("libSearch").addEventListener("input", (e) => { libQuery = e.target.value; renderLibrary(); });
+$("libSort").addEventListener("change", (e) => {
+  libSort = e.target.value;
+  try { localStorage.setItem("sachnoi-lib-sort", libSort); } catch {}
+  renderLibrary();
+});
 
 // OCR offline qua cầu native (Apple Vision). Chỉ có trong app iOS; bản web trả null.
 function blobToBase64(blob) {

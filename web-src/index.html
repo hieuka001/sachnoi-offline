@@ -34,6 +34,14 @@
       </span>
     </div>
     <p id="importStatus" class="muted"></p>
+    <div class="row" style="margin:10px 0">
+      <input id="libSearch" class="input grow" placeholder="Tìm theo tên sách hoặc tác giả (gõ không dấu cũng được)…">
+      <select id="libSort" class="select" title="Sắp xếp thư viện">
+        <option value="recent">Mới thêm</option>
+        <option value="title">Tên A–Z</option>
+        <option value="progress">Tiến độ nghe</option>
+      </select>
+    </div>
     <div id="bookGrid" class="grid"></div>
     <p id="emptyLib" class="muted">Chưa có sách nào. Bấm “Thêm sách” để chọn file EPUB, PDF hoặc TXT trên máy — sách chỉ lưu trong máy này.</p>
   </section>

@@ -141,6 +141,23 @@ export function normalizeForSpeech(rawText, opts = {}) {
   // Trang: tr. 12
   t = t.replace(/\btr\.\s*(\d+)\b/gi, (_, n) => `trang ${numberToVietnamese(n)}`);
 
+  // Số dính liền đơn vị ("10km", "1,5kg", "10 ha", "3km/h"): số phải đọc
+  // thành chữ TRƯỚC bước đổi số chung — nếu không "10" trong "10km" không
+  // khớp \b\d+\b (không có biên từ giữa số và chữ) nên chữ số còn sót lại.
+  // Đơn vị "ha" CHỈ đổi khi có số đứng trước (kể cả cách 1 khoảng trắng) —
+  // "ha ha" (tiếng cười), "Pha", "Nha Trang" không được chạm tới.
+  // Đơn vị 1 ký tự chỉ đổi khi dính TRỰC TIẾP vào số ("10s", "2l"); loại
+  // "A" (lớp 10A), "K" (10K = mười nghìn), "J", "N" vì dễ nhầm.
+  const GLUED_SINGLE_UNITS = ["m", "s", "l", "L", "g", "V", "W"];
+  const gluedUnits = [...Object.keys(UNITS).filter((k) => k.length > 1), ...GLUED_SINGLE_UNITS]
+    .sort((a, b) => b.length - a.length);
+  for (const k of gluedUnits) {
+    const pat = k.length === 1
+      ? `(?<![\\p{L}\\d])(${NUM})${esc(k)}(?![\\p{L}\\d])`
+      : `(?<![\\p{L}\\d])(${NUM})\\s*${esc(k)}(?![\\p{L}\\d])`;
+    t = t.replace(new RegExp(pat, "gu"), (_, n) => `${numericTokenToWords(n)} ${UNITS[k]}`);
+  }
+
   // Số nghìn/thập phân/số nguyên còn lại
   t = t.replace(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g, (m) => numericTokenToWords(m));
   t = t.replace(/\b\d+,\d+\b/g, (m) => numericTokenToWords(m));
@@ -164,10 +181,13 @@ export function normalizeForSpeech(rawText, opts = {}) {
   // Viết tắt dính số kiểu COVID-19 -> "covid mười chín" (chữ-gạch-số còn sót)
   t = t.replace(/(\p{L})-(\d[\d\s]*\d|\d)/gu, (_, w, n) => `${w} ${numberToVietnamese(n.replace(/\s/g, ""))}`);
 
-  // Đơn vị đo nhiều ký tự (đơn vị 1 ký tự chỉ mở khi đứng ngay sau số — đã thành chữ nên bỏ qua ở bản 1.0)
+  // Đơn vị đo nhiều ký tự (đơn vị 1 ký tự chỉ mở khi dính liền số — xem bước
+  // số dính đơn vị ở trên).
   // Lookbehind (?<![\p{L}]) sau \s*: đơn vị không được dính vào đuôi một từ
-  // ("Pha" chứa "ha" nhưng không phải đơn vị héc-ta; "10mg"/"10 mg" vẫn khớp).
-  const unitKeys = Object.keys(UNITS).filter((k) => k.length > 1).sort((a, b) => b.length - a.length);
+  // ("Pha" chứa "ha" nhưng không phải đơn vị héc-ta).
+  // "ha" KHÔNG đổi ở bước này: chỉ số dính "ha" mới là héc-ta (đã xử lý ở
+  // bước số dính đơn vị); "ha ha" là tiếng cười phải giữ nguyên.
+  const unitKeys = Object.keys(UNITS).filter((k) => k.length > 1 && k !== "ha").sort((a, b) => b.length - a.length);
   for (const k of unitKeys) {
     // Key bắt đầu bằng chữ (mg, km, ha...): cấm dính đuôi từ. Key bắt đầu bằng
     // ký hiệu (°C, °F): giữ như cũ — nó thường dính ngay sau số/chữ ("37,5°C").

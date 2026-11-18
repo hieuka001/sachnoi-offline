@@ -724,8 +724,123 @@
       "expected": "na xa phóng tên lửa.",
       "group": "viet-tat",
       "input": "NASA phóng tên lửa."
+    },
+    {
+      "expected": "chạy mười ki lô mét mỗi ngày.",
+      "group": "so-dinh-don-vi",
+      "input": "Chạy 10km mỗi ngày."
+    },
+    {
+      "expected": "uống mười mi li gam thuốc.",
+      "group": "so-dinh-don-vi",
+      "input": "Uống 10mg thuốc."
+    },
+    {
+      "expected": "uống một trăm mi li lít nước.",
+      "group": "so-dinh-don-vi",
+      "input": "Uống 100ml nước."
+    },
+    {
+      "expected": "nặng năm ki lô gam.",
+      "group": "so-dinh-don-vi",
+      "input": "Nặng 5kg."
+    },
+    {
+      "expected": "mua một phẩy năm ki lô gam gạo.",
+      "group": "so-dinh-don-vi",
+      "input": "Mua 1,5kg gạo."
+    },
+    {
+      "expected": "chạy ba ki lô mét trên giờ.",
+      "group": "so-dinh-don-vi",
+      "input": "Chạy 3km/h."
+    },
+    {
+      "expected": "phòng mười mét vuông.",
+      "group": "so-dinh-don-vi",
+      "input": "Phòng 10m2."
+    },
+    {
+      "expected": "rộng hai phẩy năm héc ta đất.",
+      "group": "so-dinh-don-vi",
+      "input": "Rộng 2,5 ha đất."
+    },
+    {
+      "expected": "diện tích mười héc ta.",
+      "group": "so-dinh-don-vi",
+      "input": "Diện tích 10 ha."
+    },
+    {
+      "expected": "đợi mười giây rồi đi.",
+      "group": "so-dinh-don-vi",
+      "input": "Đợi 10s rồi đi."
+    },
+    {
+      "expected": "mua hai lít sữa.",
+      "group": "so-dinh-don-vi",
+      "input": "Mua 2l sữa."
+    },
+    {
+      "expected": "đoạn dây dài mười mét.",
+      "group": "so-dinh-don-vi",
+      "input": "Đoạn dây dài 10m."
+    },
+    {
+      "expected": "cười ha ha.",
+      "group": "so-dinh-don-vi",
+      "input": "Cười ha ha."
+    },
+    {
+      "expected": "ha ha, vui quá!",
+      "group": "so-dinh-don-vi",
+      "input": "Ha ha, vui quá!"
+    },
+    {
+      "expected": "ha ha ha.",
+      "group": "so-dinh-don-vi",
+      "input": "ha ha ha."
+    },
+    {
+      "expected": "lớp 10a học giỏi.",
+      "group": "so-dinh-don-vi",
+      "input": "Lớp 10A học giỏi."
+    },
+    {
+      "expected": "mạng 5g rất nhanh.",
+      "group": "so-dinh-don-vi",
+      "input": "Mạng 5G rất nhanh."
+    },
+    {
+      "expected": "giá 10k đồng.",
+      "group": "so-dinh-don-vi",
+      "input": "Giá 10K đồng."
+    },
+    {
+      "expected": "diện tích mười ha.",
+      "group": "so-dinh-don-vi",
+      "input": "Diện tích mười ha."
+    },
+    {
+      "expected": "bóng đèn một trăm oát.",
+      "group": "so-dinh-don-vi",
+      "input": "Bóng đèn 100W."
+    },
+    {
+      "expected": "sạc mười hai vôn.",
+      "group": "so-dinh-don-vi",
+      "input": "Sạc 12V."
+    },
+    {
+      "expected": "liều mười mi li gam trên đề xi lít.",
+      "group": "so-dinh-don-vi",
+      "input": "Liều 10mg/dL."
+    },
+    {
+      "expected": "đo mười mi li mét mưa.",
+      "group": "so-dinh-don-vi",
+      "input": "Đo 10mm mưa."
     }
   ],
-  "note": "Bộ vàng mở rộng: 40 câu khởi động + 105 câu vòng 1.3.1 (tiền tệ, ngày tháng, phần trăm, phân số, địa chỉ, viết tắt y khoa, thuật ngữ tiên hiệp, số điện thoại, năm sinh/thế kỷ La Mã). Mỗi câu: input -> expected (text sau chuẩn hoá, viết thường để đưa vào TTS). Mỗi expected đã chạy qua engine thật khi viết; 4 lỗi engine do bộ này phát hiện đã sửa ở normalize.js (ngày thiếu năm, tháng La Mã nhân đôi, đơn vị ha ăn đuôi từ, § + số).",
-  "version": "1.1-expanded"
+  "note": "Bộ vàng mở rộng: 40 câu khởi động + 105 câu vòng 1.3.1 + 23 câu vòng 1.5.0 (số dính đơn vị: 10km/1,5kg/3km/h/10m2/10s/2l/10m/100W/12V/10mg/dL; tiếng cười ha ha; giới hạn đã biết: lớp 10A, 5G, 10K không đổi thành đơn vị; 'mười ha' viết bằng chữ giữ nguyên). Mỗi câu: input -> expected (text sau chuẩn hoá, viết thường để đưa vào TTS). Mỗi expected đã chạy qua engine thật khi viết; 2 lỗi engine do bộ này phát hiện đã sửa ở normalize.js (số dính đơn vị còn sót chữ số, ha biến tiếng cười thành héc-ta).",
+  "version": "1.2-expanded"
 }
