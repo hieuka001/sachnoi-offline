@@ -23,6 +23,9 @@ if (!existsSync(join(teDest, "index.js"))) {
 process.on("exit", () => { if (madeTE) rmSync(teDest, { recursive: true, force: true }); });
 
 globalThis.window = globalThis;
+// Node 20 trên CI chưa có global navigator (máy local Node 24 có sẵn) mà
+// player.stop() có kiểm "mediaSession" in navigator — stub để khớp cả hai.
+globalThis.navigator = {};
 globalThis.Audio = class {
   constructor() { this.preload = ""; }
   addEventListener() {}
