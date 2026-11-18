@@ -2,7 +2,9 @@
 // theo câu, phát nền qua <audio> + Media Session (web) và cầu native (iOS).
 // Trong app iOS: giọng VieNeu native. Trên trình duyệt (dev): rơi về giọng hệ thống.
 
-import { prepareForSpeech } from "../text-engine/index.js";
+import { prepareForSpeech, cleanupText, splitSentences } from "../text-engine/index.js";
+import { buildBookSentences } from "./spokenCache.js";
+import { EXTRACT_VERSION } from "./extract.js";
 
 export const native = () => window.Capacitor?.Plugins?.SachNoiBridge ?? null;
 export const isNative = () => !!window.Capacitor?.isNativePlatform?.();
@@ -67,20 +69,23 @@ export class Player {
     return this.sentences.map((s) => ({ t: s.spoken, c: s.chapterTitle || "", p: !!s.paraEnd }));
   }
 
-  /** Dựng danh sách câu cho cả sách (theo chương), áp từ điển cá nhân của sách. */
-  async load(book, extracted, bookDict = {}) {
+  /** Dựng danh sách câu cho cả sách (theo chương), áp từ điển cá nhân của sách.
+   * 1.7.0: dùng spokenCache (câu đã chuẩn hoá lưu ở progress) để mở sách lớn
+   * nhanh — lần đầu chuẩn hoá đủ (~2,1 giây / 3.800 câu), lần sau khôi phục
+   * từ cache (~25ms). lastSpokenCache để app.js lưu lại; hit=false nghĩa là
+   * cache vừa được dựng mới (hoặc vô hiệu vì từ điển / EXTRACT_VERSION đổi).
+   * @param {object|null} spokenCache - cache đã lưu hoặc null */
+  async load(book, extracted, bookDict = {}, spokenCache = null) {
     this.stop();
     this.book = { id: book.id, title: extracted.title, author: extracted.author };
-    this.sentences = [];
-    const total = extracted.chapters.length;
-    for (let ci = 0; ci < total; ci++) {
-      const ch = extracted.chapters[ci];
-      for (const para of ch.paragraphs) {
-        const { sentences } = prepareForSpeech(para, { bookDict });
-        sentences.forEach((s, si) => this.sentences.push({ ...s, chapterIndex: ci, chapterTitle: ch.title, paraEnd: si === sentences.length - 1 }));
-      }
-      if (ci % 5 === 0) { this.onProgress(Math.round(((ci + 1) / total) * 100)); await tick(); }
-    }
+    const { sentences, cache, hit } = buildBookSentences(extracted, bookDict, spokenCache, EXTRACT_VERSION, {
+      cleanupText, splitSentences, prepareForSpeech,
+    });
+    this.sentences = sentences;
+    this.lastSpokenCache = cache;
+    this.spokenCacheHit = hit;
+    // Giữ hành vi cũ: báo tiến độ theo chương trong lúc dựng (cache hit thì
+    // gần như tức thì nên chỉ báo 100% một lần).
     this.onProgress(100);
     this.index = -1;
     return this.sentences.length;
@@ -313,5 +318,3 @@ export class Player {
     });
   }
 }
-
-const tick = () => new Promise((r) => setTimeout(r, 0));

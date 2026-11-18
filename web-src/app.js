@@ -302,7 +302,12 @@ async function openBook(id, autoplay = false) {
   $("readerTitle").textContent = extracted.title;
   $("scanWarn").classList.toggle("hidden", !extracted.scanned);
   $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
-  await state.player.load(meta, extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(id)));
+  await state.player.load(meta, extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(id)), progress?.spokenCache);
+  // 1.7.0: cache câu đã chuẩn hoá vừa dựng mới (lần mở đầu / từ điển đổi /
+  // trích lại) thì lưu lại để lần sau mở nhanh; cache trúng thì khỏi ghi.
+  if (state.player.lastSpokenCache && !state.player.spokenCacheHit) {
+    await store.setProgress(id, { spokenCache: state.player.lastSpokenCache });
+  }
   $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
   $("seekSlider").value = String(Math.max(0, startSentence));
   state.bookmarks = await store.listBookmarks(id);
@@ -395,6 +400,8 @@ function showChapter(ci) {
         await store.setBookDict(state.book.id, dict);
       }
       await state.player.load(state.book, state.extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(state.book.id)));
+      // Từ điển đổi nên cache cũ vô hiệu, load đã dựng cache mới — lưu lại.
+      if (state.player.lastSpokenCache) await store.setProgress(state.book.id, { spokenCache: state.player.lastSpokenCache });
       $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
       alert(`Đã nhớ: từ nay “${word}” đọc là “${reading}” ${allBooks ? "trong mọi sách" : "trong sách này"}.`);
     });
