@@ -283,8 +283,9 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
                 self.advance()
                 return
             }
-            self.prefetch(next: idx + 1)
-            self.prefetch(next: idx + 2)
+            // 1.9.3 (P0-B): nhìn trước 5 đoạn thay vì 2 — tổng hợp chậm biến thiên
+            // thì vẫn còn đệm, không im lặng chờ giữa câu.
+            for n in 1...5 { self.prefetch(next: idx + n) }
             self.trimCache(around: idx)
             if self.useEngine {
                 if !self.scheduleOnEngine(datas: datas, item: item, gen: gen, idx: idx) {
@@ -302,7 +303,9 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         let split = settings.gapComma >= 0.05
         let clauses = split ? Self.splitClauses(items[nextIdx].text) : [items[nextIdx].text]
         let v = voice
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        // 1.9.3 (P0-B): prefetch chạy ở QoS .default thay vì .utility để
+        // tổng hợp đoạn kế không bị hệ thống dìm xuống khi máy bận.
+        DispatchQueue.global(qos: .default).async { [weak self] in
             for (c, clause) in clauses.enumerated() {
                 let key = "\(nextIdx)#\(c)"
                 var exists = false
@@ -316,8 +319,10 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func trimCache(around idx: Int) {
+        // 1.9.3 (P0-B): cửa sổ ±6 khớp với prefetch sâu 5 — đoạn đã tổng hợp
+        // trước không bị xoá ngay trước khi phát tới.
         for k in cache.keys {
-            if let n = Int(k.split(separator: "#").first ?? ""), abs(n - idx) > 3 {
+            if let n = Int(k.split(separator: "#").first ?? ""), abs(n - idx) > 6 {
                 cache.removeValue(forKey: k)
             }
         }

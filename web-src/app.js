@@ -3,6 +3,7 @@ import { store, newId, formatBytes } from "./lib/store.js";
 import { extractBook, EXTRACT_VERSION } from "./lib/extract.js";
 import { Player, native, isNative } from "./lib/player.js";
 import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
+import { buildVoiceOptions } from "./lib/voiceOptions.js";
 import { buildBackup, parseBackup } from "./lib/backup.js";
 import { computeListeningStats, formatDuration, isFinished } from "./lib/stats.js";
 import { filterBooks, sortBooks } from "./lib/library.js";
@@ -664,14 +665,40 @@ $("resetSettingsBtn").addEventListener("click", () => {
 });
 
 // ---------- Giọng ----------
-async function renderVoices() {
-  if (!state.manifest) {
-    const { manifest, source } = await loadManifest();
-    state.manifest = manifest;
-    $("manifestSource").textContent = source === "online" ? "Danh mục mới nhất" : "Danh mục kèm app (đang offline)";
-    if (isNative()) native()?.markManifestSeen?.({ version: manifest.version }).catch(() => {});
+// 1.9.3 (P0-A): nạp manifest giọng 1 lần, dùng chung cho khởi động và tab Giọng.
+// Trước đây manifest chỉ được nạp trong renderVoices() (khi mở tab Giọng) nên
+// cả 2 ô chọn giọng đều trống cho tới lúc đó -> sheet Tuỳ chỉnh hiện "No Options".
+async function ensureManifest() {
+  if (state.manifest) return state.manifest;
+  if (!state.manifestPromise) {
+    state.manifestPromise = loadManifest().then(({ manifest, source }) => {
+      state.manifest = manifest;
+      $("manifestSource").textContent = source === "online" ? "Danh mục mới nhất" : "Danh mục kèm app (đang offline)";
+      if (isNative()) native()?.markManifestSeen?.({ version: manifest.version }).catch(() => {});
+      return manifest;
+    }).catch((err) => { state.manifestPromise = null; throw err; });
   }
-  const m = state.manifest;
+  return state.manifestPromise;
+}
+
+// Điền options giọng cho cả 2 select (thanh phát + sheet Tuỳ chỉnh) và đặt
+// value theo giọng đã lưu — chạy ngay khi khởi động, không chờ mở tab Giọng.
+async function fillVoiceSelects() {
+  const m = await ensureManifest();
+  const options = buildVoiceOptions(m.voices || []);
+  $("voiceSelect").innerHTML = options;
+  $("voiceSelectSheet").innerHTML = options;
+  // 1.9.0: giọng đã lưu không còn trong danh sách thì về mặc định
+  if (state.player.voice !== "default" && !(m.voices || []).some((v) => v.id === state.player.voice)) {
+    state.player.setVoice("default");
+  }
+  $("voiceSelect").value = state.player.voice;
+  $("voiceSelectSheet").value = state.player.voice;
+  return m;
+}
+
+async function renderVoices() {
+  const m = await fillVoiceSelects();
   const installed = await installedPackIds();
   if (state.coreBundled === undefined && isNative()) {
     try { state.coreBundled = !!(await native().getInfo())?.coreBundled; } catch { state.coreBundled = false; }
@@ -706,18 +733,8 @@ async function renderVoices() {
     const pack = m.packs.find((p) => p.id === el.dataset.delPack);
     if (confirm(`Xoá gói “${pack.name}” khỏi máy?`)) { await deletePack(pack); renderVoices(); }
   }));
-  // Giọng VieNeu preset
+  // Giọng VieNeu preset (options của 2 select đã điền trong fillVoiceSelects)
   const voices = m.voices || [];
-  const voiceOptions = `<option value="default">Giọng mặc định</option>` +
-    voices.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`).join("");
-  $("voiceSelect").innerHTML = voiceOptions;
-  $("voiceSelectSheet").innerHTML = voiceOptions;
-  // 1.9.0: khôi phục giọng đã lưu; giọng cũ không còn trong danh sách thì về mặc định
-  if (state.player.voice !== "default" && !voices.some((v) => v.id === state.player.voice)) {
-    state.player.setVoice("default");
-  }
-  $("voiceSelect").value = state.player.voice;
-  $("voiceSelectSheet").value = state.player.voice;
   $("voiceList").innerHTML = voices.map((v) => `
     <div class="card">
       <h4>${escapeHtml(v.name)} ${v.pick ? '<span class="chip star">★ Đề xuất</span>' : ""}</h4>
@@ -795,3 +812,7 @@ function escapeHtml(s) {
 }
 
 renderLibrary();
+
+// 1.9.3 (P0-A): điền ô chọn giọng ngay khi mở app — trước đây chỉ điền khi
+// mở tab Giọng nên sheet Tuỳ chỉnh mở sớm hiện "No Options".
+fillVoiceSelects().catch(() => {});
