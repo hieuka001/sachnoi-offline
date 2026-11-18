@@ -25,7 +25,9 @@ export class Player {
     this.sentenceFirstItem = [];
     this.index = -1;
     this.playing = false;
-    this.voice = "default";
+    // 1.9.0: khôi phục giọng đã chọn lần trước ngay khi tạo player — trước đây
+    // chỉ giữ trong bộ nhớ nên out app vào lại là mất, "Nghe tiếp" đọc giọng mặc định.
+    try { this.voice = localStorage.getItem("sachnoi.voice") || "default"; } catch { this.voice = "default"; }
     this.speed = 1;
     this.cache = new Map(); // idx -> objectURL (giữ tối đa 6 câu gần nhất)
     this.sleep = null; // {type:'minutes', at:timestamp} | {type:'chapter'}
@@ -202,6 +204,7 @@ export class Player {
 
   setVoice(v) {
     this.voice = v;
+    try { localStorage.setItem("sachnoi.voice", v || "default"); } catch {}
     this.cache.clear();
     if (this.nativePlayer) { this._nativeKey = null; native()?.ttsSetVoice?.({ voice: v }).catch(() => {}); }
   }

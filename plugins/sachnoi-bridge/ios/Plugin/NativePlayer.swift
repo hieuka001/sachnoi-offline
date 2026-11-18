@@ -16,7 +16,7 @@ import AVFoundation
 public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     /// cont (1.8.1): còn đoạn tiếp của CÙNG câu theo sau (câu dài bị chẻ nhỏ ở
     /// phía web) — hết đoạn này dùng khoảng nghỉ dấu phẩy thay vì nghỉ hết câu.
-    public struct Item { let text: String; let chapter: String; let paraEnd: Bool; let cont: Bool = false }
+    public struct Item { let text: String; let chapter: String; let paraEnd: Bool; let cont: Bool }
     public struct AudioSettings {
         var volume: Float = 1.0        // 0..1
         var pitchCents: Float = 0      // -1200..1200 (100 cent = 1 bán âm)

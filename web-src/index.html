@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Sách Nói Offline</title>
 <link rel="stylesheet" href="styles.css">
 <script src="vendor/jszip.min.js"></script>
@@ -126,23 +126,75 @@
     <button id="audioBtn" class="btn small" title="Cỡ chữ, nền đọc, âm lượng, tông giọng, khoảng nghỉ">Tuỳ chỉnh</button>
   </div>
   <input id="seekSlider" type="range" min="0" max="0" step="1" value="0" class="seek" title="Kéo để nhảy tới câu">
-  <div id="audioPanel" class="audio-panel hidden">
-    <div class="row wrap" style="align-items:center;gap:8px">
-      <span class="muted">Cỡ chữ</span>
-      <button id="fontMinus" class="btn small">A−</button>
-      <span id="fontSizeVal" class="tnum">18</span>
-      <button id="fontPlus" class="btn small">A+</button>
-      <span class="grow"></span>
-      <button id="themeBtn" class="btn small">Nền: Tối</button>
-    </div>
-    <label>Âm lượng <input id="setVolume" type="range" min="0" max="100" step="1"><span id="setVolumeVal"></span></label>
-    <label>Tông giọng <input id="setPitch" type="range" min="-6" max="6" step="0.5"><span id="setPitchVal"></span></label>
-    <label>Nghỉ sau câu <input id="setGapSentence" type="range" min="0" max="2" step="0.05"><span id="setGapSentenceVal"></span></label>
-    <label>Nghỉ sau phẩy <input id="setGapComma" type="range" min="0" max="1" step="0.05"><span id="setGapCommaVal"></span></label>
-    <label>Nghỉ xuống đoạn <input id="setGapPara" type="range" min="0" max="3" step="0.1"><span id="setGapParaVal"></span></label>
-  </div>
   <div id="playerProgress" class="player-progress"></div>
 </footer>
+
+<!-- TUỲ CHỈNH (1.9.0): sheet trượt từ dưới, nhóm rõ ràng, ô bấm lớn -->
+<div id="sheetOverlay" class="sheet-overlay hidden"></div>
+<section id="customSheet" class="sheet hidden" aria-label="Tuỳ chỉnh">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <h3>Tuỳ chỉnh</h3>
+    <button id="sheetClose" class="icon-btn" title="Đóng">✕</button>
+  </div>
+
+  <div class="sheet-group">
+    <h4>Giọng đọc</h4>
+    <select id="voiceSelectSheet" class="select sheet-select"></select>
+    <h4 class="sheet-sub">Tốc độ đọc</h4>
+    <div class="chips-row" id="speedChips">
+      <button class="chip-btn" data-speed="0.75">0.75×</button>
+      <button class="chip-btn" data-speed="1">1×</button>
+      <button class="chip-btn" data-speed="1.25">1.25×</button>
+      <button class="chip-btn" data-speed="1.5">1.5×</button>
+      <button class="chip-btn" data-speed="2">2×</button>
+    </div>
+  </div>
+
+  <div class="sheet-group">
+    <h4>Âm thanh</h4>
+    <div class="set-row">
+      <div class="set-top"><span class="set-name">Âm lượng</span><span class="set-val" id="setVolumeVal"></span></div>
+      <input id="setVolume" type="range" min="0" max="100" step="1">
+    </div>
+    <div class="set-row">
+      <div class="set-top"><span class="set-name">Tông giọng</span><span class="set-val" id="setPitchVal"></span></div>
+      <input id="setPitch" type="range" min="-6" max="6" step="0.5">
+    </div>
+    <div class="set-row">
+      <div class="set-top"><span class="set-name">Nghỉ sau câu</span><span class="set-val" id="setGapSentenceVal"></span></div>
+      <input id="setGapSentence" type="range" min="0" max="2" step="0.05">
+    </div>
+    <div class="set-row">
+      <div class="set-top"><span class="set-name">Nghỉ sau phẩy</span><span class="set-val" id="setGapCommaVal"></span></div>
+      <input id="setGapComma" type="range" min="0" max="1" step="0.05">
+    </div>
+    <div class="set-row">
+      <div class="set-top"><span class="set-name">Nghỉ xuống đoạn</span><span class="set-val" id="setGapParaVal"></span></div>
+      <input id="setGapPara" type="range" min="0" max="3" step="0.1">
+    </div>
+  </div>
+
+  <div class="sheet-group">
+    <h4>Hiển thị khi đọc</h4>
+    <div class="set-top"><span class="set-name">Cỡ chữ</span></div>
+    <div class="font-row">
+      <button id="fontMinus" class="btn">A− Nhỏ</button>
+      <span id="fontSizeVal" class="font-val tnum">18</span>
+      <button id="fontPlus" class="btn">A+ Lớn</button>
+    </div>
+    <div class="set-top" style="margin-top:16px"><span class="set-name">Nền đọc</span></div>
+    <div class="chips-row" id="themeChips">
+      <button class="chip-btn" data-theme="dark">Tối</button>
+      <button class="chip-btn" data-theme="paper">Giấy</button>
+      <button class="chip-btn" data-theme="light">Sáng</button>
+    </div>
+  </div>
+
+  <div class="sheet-group">
+    <button id="resetSettingsBtn" class="btn sheet-reset">Đặt lại mặc định</button>
+  </div>
+</section>
 
 <!-- MÀN HÌNH ĐANG NGHE (1.8.0): bìa lớn + tên sách/chương lớn + câu đang đọc -->
 <section id="nowPlaying" class="now-playing hidden" aria-label="Đang nghe">

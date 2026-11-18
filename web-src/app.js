@@ -64,15 +64,21 @@ $("nextBtn").addEventListener("click", () => state.player.next());
 $("npNextBtn").addEventListener("click", () => state.player.next());
 $("prevBtn").addEventListener("click", () => state.player.prev());
 $("npPrevBtn").addEventListener("click", () => state.player.prev());
-$("speedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("npSpeedSelect").value = e.target.value; });
-$("npSpeedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("speedSelect").value = e.target.value; });
+$("speedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("npSpeedSelect").value = e.target.value; markSpeedChips(); });
+$("npSpeedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("speedSelect").value = e.target.value; markSpeedChips(); });
 $("sleepSelect").addEventListener("change", (e) => {
   const v = e.target.value;
   if (v === "off") state.player.setSleep("off");
   else if (v === "chapter") state.player.setSleep("chapter");
   else state.player.setSleep("minutes", parseInt(v, 10));
 });
-$("voiceSelect").addEventListener("change", (e) => { state.player.setVoice(e.target.value); });
+$("voiceSelect").addEventListener("change", (e) => { state.player.setVoice(e.target.value); $("voiceSelectSheet").value = e.target.value; });
+$("voiceSelectSheet").addEventListener("change", (e) => { state.player.setVoice(e.target.value); $("voiceSelect").value = e.target.value; });
+
+// Khoá cứng thao tác (1.9.0): chặn pinch-zoom và zoom khi chạm 2 ngón — app
+// chạy như app thật, không phóng to/tràn viền. Cuộn 1 ngón vẫn bình thường.
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
 // Thanh kéo tiến độ (1.2.0): kéo để nhảy tới câu bất kỳ trong sách
 let seekDragging = false;
@@ -140,17 +146,40 @@ $("npSeek").addEventListener("change", () => {
   npSeeking = false;
   if (state.book) state.player.play(clampSeekIndex(parseInt($("npSeek").value, 10), state.player.sentences.length));
 });
-// Tuỳ chỉnh nằm ở thanh phát nhỏ (bị màn hình này che) nên đóng màn hình rồi mở panel.
-$("npAudioBtn").addEventListener("click", () => { closeNowPlaying(); $("audioPanel").classList.remove("hidden"); });
+// Tuỳ chỉnh (1.9.0): sheet trượt từ dưới, mở được cả từ màn hình Đang nghe.
+function openSheet() {
+  markSpeedChips();
+  $("sheetOverlay").classList.remove("hidden");
+  $("customSheet").classList.remove("hidden");
+}
+function closeSheet() {
+  $("sheetOverlay").classList.add("hidden");
+  $("customSheet").classList.add("hidden");
+}
+$("npAudioBtn").addEventListener("click", openSheet);
+$("audioBtn").addEventListener("click", openSheet);
+$("sheetClose").addEventListener("click", closeSheet);
+$("sheetOverlay").addEventListener("click", closeSheet);
+function markSpeedChips() {
+  const cur = parseFloat($("speedSelect").value) || 1;
+  document.querySelectorAll("#speedChips .chip-btn").forEach((b) =>
+    b.classList.toggle("active", parseFloat(b.dataset.speed) === cur));
+}
+document.querySelectorAll("#speedChips .chip-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    $("speedSelect").value = b.dataset.speed;
+    $("speedSelect").dispatchEvent(new Event("change"));
+  }));
 
-// Panel Âm thanh (1.0.6): âm lượng / tông giọng / khoảng nghỉ
-$("audioBtn").addEventListener("click", () => $("audioPanel").classList.toggle("hidden"));
+// Panel Âm thanh (1.0.6, chuyển vào sheet 1.9.0): âm lượng / tông / khoảng nghỉ
+const audioPanelSyncs = [];
 (function initAudioPanel() {
   const s = state.player.audioSettings;
   const bind = (id, valId, key, fmt) => {
     const el = $(id);
     el.value = s[key];
     $(valId).textContent = fmt(s[key]);
+    audioPanelSyncs.push(() => { el.value = state.player.audioSettings[key]; $(valId).textContent = fmt(state.player.audioSettings[key]); });
     el.addEventListener("input", () => {
       const v = parseFloat(el.value);
       $(valId).textContent = fmt(v);
@@ -591,17 +620,24 @@ function applyReaderPrefs() {
   const fv = $("fontSizeVal");
   if (fv) fv.textContent = String(readerPrefs.fontSize);
   rb.dataset.theme = readerPrefs.theme;
-  $("themeBtn").textContent = "Nền: " + (THEMES.find(([k]) => k === readerPrefs.theme)?.[1] || "Tối");
+  document.querySelectorAll("#themeChips .chip-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.theme === readerPrefs.theme));
   try { localStorage.setItem("sachnoi.reader", JSON.stringify(readerPrefs)); } catch {}
 }
 $("fontMinus").addEventListener("click", () => { readerPrefs.fontSize = Math.max(14, readerPrefs.fontSize - 2); applyReaderPrefs(); });
 $("fontPlus").addEventListener("click", () => { readerPrefs.fontSize = Math.min(28, readerPrefs.fontSize + 2); applyReaderPrefs(); });
-$("themeBtn").addEventListener("click", () => {
-  const i = THEMES.findIndex(([k]) => k === readerPrefs.theme);
-  readerPrefs.theme = THEMES[(i + 1) % THEMES.length][0];
+document.querySelectorAll("#themeChips .chip-btn").forEach((b) =>
+  b.addEventListener("click", () => { readerPrefs.theme = b.dataset.theme; applyReaderPrefs(); }));
+applyReaderPrefs();
+
+// Đặt lại mặc định (1.9.0): âm thanh + cỡ chữ + nền đọc về giá trị gốc
+$("resetSettingsBtn").addEventListener("click", () => {
+  state.player.setAudioSettings({ volume: 100, pitch: 0, gapSentence: 0.25, gapComma: 0, gapParagraph: 0.8 });
+  audioPanelSyncs.forEach((f) => f());
+  readerPrefs.fontSize = 18;
+  readerPrefs.theme = "dark";
   applyReaderPrefs();
 });
-applyReaderPrefs();
 
 // ---------- Giọng ----------
 async function renderVoices() {
@@ -648,8 +684,16 @@ async function renderVoices() {
   }));
   // Giọng VieNeu preset
   const voices = m.voices || [];
-  $("voiceSelect").innerHTML = `<option value="default">Giọng mặc định</option>` +
+  const voiceOptions = `<option value="default">Giọng mặc định</option>` +
     voices.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`).join("");
+  $("voiceSelect").innerHTML = voiceOptions;
+  $("voiceSelectSheet").innerHTML = voiceOptions;
+  // 1.9.0: khôi phục giọng đã lưu; giọng cũ không còn trong danh sách thì về mặc định
+  if (state.player.voice !== "default" && !voices.some((v) => v.id === state.player.voice)) {
+    state.player.setVoice("default");
+  }
+  $("voiceSelect").value = state.player.voice;
+  $("voiceSelectSheet").value = state.player.voice;
   $("voiceList").innerHTML = voices.map((v) => `
     <div class="card">
       <h4>${escapeHtml(v.name)} ${v.pick ? '<span class="chip star">★ Đề xuất</span>' : ""}</h4>

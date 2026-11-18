@@ -58,12 +58,44 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
   padding: 12px; white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; min-height: 44px; }
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* Panel Âm thanh (1.0.6) */
-.audio-panel { padding: 8px 12px 4px; border-top: 1px solid rgba(127,127,127,.25); }
-.audio-panel label { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
-.audio-panel input[type="range"] { flex: 1; }
-.audio-panel span { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
 .btn.small { padding: 4px 10px; font-size: 13px; }
+
+/* Khoá cứng thao tác (1.9.0): không tràn ngang, không nảy viền, ô nhập >= 16px
+   để iOS không tự phóng to khi chạm vào select/input */
+html, body { overscroll-behavior: none; }
+body { overflow-x: hidden; touch-action: manipulation; }
+main, .view { overflow-x: clip; }
+.select, .input, .textarea { font-size: 16px; }
+.reader { overflow-wrap: break-word; }
+.reader img, .reader table { max-width: 100%; }
+
+/* Sheet Tuỳ chỉnh (1.9.0) */
+.sheet-overlay { position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.55); }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; max-height: 88vh; overflow-y: auto; overscroll-behavior: contain;
+  background: rgba(22,27,33,.98); border-top: 1px solid rgba(255,255,255,.12); border-radius: 20px 20px 0 0;
+  padding: 10px 18px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -18px 44px rgba(0,0,0,.5); }
+.sheet-handle { width: 44px; height: 5px; border-radius: 99px; background: rgba(255,255,255,.25); margin: 2px auto 10px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.sheet-head h3 { margin: 0; font-size: 19px; }
+.sheet-group { padding: 14px 0 6px; border-top: 1px solid rgba(255,255,255,.07); margin-top: 10px; }
+.sheet-group:first-of-type { border-top: 0; margin-top: 0; }
+.sheet-group h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.sheet-group h4.sheet-sub { margin-top: 18px; }
+.sheet-select { width: 100%; padding: 12px; }
+.set-row { margin: 12px 0; }
+.set-top { display: flex; justify-content: space-between; align-items: baseline; }
+.set-name { font-size: 15px; }
+.set-val { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.set-row input[type="range"] { width: 100%; height: 34px; accent-color: var(--accent); margin: 0; }
+.chips-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip-btn { flex: 1; min-width: 56px; padding: 11px 8px; border-radius: var(--radius-btn); border: 1px solid rgba(255,255,255,.12);
+  background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; cursor: pointer; transition: all .15s var(--ease); }
+.chip-btn:active { transform: scale(.97); }
+.chip-btn.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+.font-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.font-row .btn { flex: 1; padding: 12px; font-size: 16px; }
+.font-val { min-width: 44px; text-align: center; font-size: 17px; font-weight: 600; }
+.sheet-reset { width: 100%; padding: 12px; }
 
 /* Công cụ đọc: dấu trang / tìm kiếm / cỡ chữ / nền (1.1.0) */
 .tool-panel { background: var(--panel); border: 1px solid rgba(255,255,255,.08); border-radius: var(--radius-card); padding: 10px 12px; margin: 8px 0; }
