@@ -4,6 +4,7 @@ import { extractBook, EXTRACT_VERSION } from "./lib/extract.js";
 import { Player, native, isNative } from "./lib/player.js";
 import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
 import { buildBackup, parseBackup } from "./lib/backup.js";
+import { computeListeningStats, formatDuration, isFinished } from "./lib/stats.js";
 import { loadGlobalDict, saveGlobalDict, mergeDicts } from "./lib/dict.js";
 import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
 
@@ -302,24 +303,39 @@ async function openBook(id, autoplay = false) {
 async function renderHistory() {
   const books = await store.listBooks();
   const byId = new Map(books.map((b) => [b.id, b]));
-  const items = (await store.listProgress())
+  const allProgress = await store.listProgress();
+  const items = allProgress
     .filter((pr) => pr.totalSentences && byId.has(pr.bookId))
     .sort((a, b) => (b.lastListenedAt || b.updatedAt || 0) - (a.lastListenedAt || a.updatedAt || 0));
+  // Thống kê nghe (1.3.0): tổng câu đã nghe, thời gian ước tính, số sách đã xong
+  const speed = parseFloat($("speedSelect").value) || 1;
+  const stats = computeListeningStats(allProgress.filter((pr) => byId.has(pr.bookId)), {
+    speed, engine: { splitSentences, normalizeForSpeech },
+  });
+  $("historyStats").innerHTML = stats.booksStarted ? `<div class="card" style="margin-bottom:10px">
+    <div class="row between"><h4>Thống kê nghe</h4><span class="chip">ước tính theo tốc độ ${speed}×</span></div>
+    <p class="muted tnum">Đã nghe <b>${stats.sentencesListened} câu</b> · khoảng <b>${formatDuration(stats.estimatedSeconds)}</b> · <b>${stats.booksFinished} cuốn</b> đã nghe xong · ${stats.booksInProgress} cuốn đang nghe dở</p>
+  </div>` : "";
   $("emptyHistory").style.display = items.length ? "none" : "block";
   $("historyList").innerHTML = items.map((pr) => {
     const b = byId.get(pr.bookId);
     const pct = progressPct(pr);
+    const done = isFinished(pr);
     const when = pr.lastListenedAt ? new Date(pr.lastListenedAt).toLocaleString("vi-VN") : "";
     return `<div class="card" style="margin-bottom:10px">
-      <div class="row between"><h4>${escapeHtml(b.title)}</h4><span class="chip ${pct >= 100 ? "ok" : ""}">${pct >= 100 ? "✓ Đã nghe xong" : `Đã nghe ${pct === 0 && pr.sentenceIndex > 0 ? "<1" : pct}%`}</span></div>
+      <div class="row between"><h4>${escapeHtml(b.title)}</h4><span class="chip ${done ? "ok" : ""}">${done ? "✓ Đã nghe xong" : `Đã nghe ${pct === 0 && pr.sentenceIndex > 0 ? "<1" : pct}%`}</span></div>
       <progress value="${pct}" max="100" style="width:100%"></progress>
       <p class="muted tnum">Câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}${when ? ` · Nghe gần nhất: ${when}` : ""}</p>
       <div class="row">
-        ${pct < 100 ? `<button class="btn jade" data-h-continue="${b.id}">▶ Nghe tiếp</button>` : ""}
+        ${done ? `<button class="btn jade" data-h-replay="${b.id}">↺ Nghe lại từ đầu</button>` : `<button class="btn jade" data-h-continue="${b.id}">▶ Nghe tiếp</button>`}
         <button class="btn" data-h-open="${b.id}">Mở sách</button>
       </div></div>`;
   }).join("");
   $("historyList").querySelectorAll("[data-h-continue]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.hContinue, true)));
+  $("historyList").querySelectorAll("[data-h-replay]").forEach((el) => el.addEventListener("click", async () => {
+    await store.setProgress(el.dataset.hReplay, { sentenceIndex: 0 });
+    openBook(el.dataset.hReplay, true);
+  }));
   $("historyList").querySelectorAll("[data-h-open]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.hOpen)));
 }
 
