@@ -389,7 +389,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         engineBusy = true
         for (i, b) in plan.enumerated() {
             if i == plan.count - 1 {
-                node.scheduleBuffer(b, at: nil, options: [], completionCallbackType: .dataPlayedBack) { [weak self] in
+                node.scheduleBuffer(b, at: nil, options: [], completionCallbackType: .dataPlayedBack) { [weak self] _ in
                     self?.queue.async {
                         guard let self, gen == self.generation, self.playing, self.index == idx else { return }
                         self.engineBusy = false
