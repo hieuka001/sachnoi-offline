@@ -268,7 +268,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
             call.reject("ttsPlay needs items"); return
         }
         let items = rawItems
-            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "", paraEnd: ($0["p"] as? NSNumber)?.boolValue ?? false) }
+            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "", paraEnd: ($0["p"] as? NSNumber)?.boolValue ?? false, cont: ($0["k"] as? NSNumber)?.boolValue ?? false) }
             .filter { !$0.text.isEmpty }
         guard !items.isEmpty else { call.reject("Không có câu nào để đọc"); return }
         player.load(items: items, voice: call.getString("voice") ?? "default",

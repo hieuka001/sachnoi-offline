@@ -18,6 +18,11 @@ export class Player {
     this.audio.preload = "auto";
     this.audio.addEventListener("ended", () => this.handleEnded());
     this.sentences = [];
+    // 1.8.1: danh sách ĐOẠN PHÁT (câu dài chẻ nhỏ) + ánh xạ đoạn -> câu.
+    // Mọi chỉ số ở lớp này (index, onSentence, tiến độ) vẫn là chỉ số CÂU.
+    this.playItems = [];
+    this.itemSentence = [];
+    this.sentenceFirstItem = [];
     this.index = -1;
     this.playing = false;
     this.voice = "default";
@@ -66,6 +71,7 @@ export class Player {
   }
 
   _nativeItems() {
+    if (this.playItems && this.playItems.length) return this.playItems;
     return this.sentences.map((s) => ({ t: s.spoken, c: s.chapterTitle || "", p: !!s.paraEnd }));
   }
 
@@ -82,6 +88,10 @@ export class Player {
       cleanupText, splitSentences, prepareForSpeech,
     });
     this.sentences = sentences;
+    const pb = buildPlaybackItems(this.sentences);
+    this.playItems = pb.items;
+    this.itemSentence = pb.itemSentence;
+    this.sentenceFirstItem = pb.sentenceFirstItem;
     this.lastSpokenCache = cache;
     this.spokenCacheHit = hit;
     // Giữ hành vi cũ: báo tiến độ theo chương trong lúc dựng (cache hit thì
@@ -102,8 +112,9 @@ export class Player {
       this.onState(true);
       if (fromIndex !== null || this._nativeKey !== key) {
         this._nativeKey = key;
+        const startItem = this.sentenceFirstItem?.[this.index] ?? this.index;
         await bridge.ttsPlay({
-          items: this._nativeItems(), startIndex: this.index, voice: this.voice,
+          items: this._nativeItems(), startIndex: startItem, voice: this.voice,
           title: this.book?.title || "", author: this.book?.author || "",
           audio: this._nativeAudio(),
         }).catch(() => {});
@@ -162,11 +173,24 @@ export class Player {
   }
 
   next() {
-    if (this.nativePlayer) { native()?.ttsNext?.().catch(() => {}); return; }
+    if (this.nativePlayer) {
+      // Nhảy theo CÂU (không phải theo đoạn phát): seek tới đoạn đầu của câu sau
+      const target = Math.min(this.index + 1, this.sentences.length - 1);
+      if (target !== this.index && this.sentenceFirstItem.length) {
+        native()?.ttsSeek?.({ index: this.sentenceFirstItem[target] }).catch(() => {});
+      }
+      return;
+    }
     if (this.index + 1 < this.sentences.length) { this.index++; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); }
   }
   prev() {
-    if (this.nativePlayer) { native()?.ttsPrev?.().catch(() => {}); return; }
+    if (this.nativePlayer) {
+      const target = Math.max(this.index - 1, 0);
+      if (target !== this.index && this.sentenceFirstItem.length) {
+        native()?.ttsSeek?.({ index: this.sentenceFirstItem[target] }).catch(() => {});
+      }
+      return;
+    }
     if (this.index > 0) { this.index--; if (this.playing) this.playCurrent(); else this.onSentence(this.index, this.sentences[this.index]); }
   }
 
@@ -288,9 +312,11 @@ export class Player {
     // Sự kiện của NativePlayer: native tự phát, JS chỉ đồng bộ UI/lưu tiến độ
     bridge.addListener("ttsSentence", ({ index }) => {
       if (!this.nativePlayer) return;
-      this.index = index;
-      const s = this.sentences[index];
-      if (s) this.onSentence(index, s);
+      // Native báo chỉ số ĐOẠN PHÁT — dịch về chỉ số CÂU cho UI/tiến độ
+      const sIdx = this.itemSentence?.[index] ?? index;
+      this.index = sIdx;
+      const s = this.sentences[sIdx];
+      if (s) this.onSentence(sIdx, s);
     });
     bridge.addListener("ttsState", ({ playing }) => {
       if (!this.nativePlayer) return;

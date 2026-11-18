@@ -14,7 +14,9 @@ import AVFoundation
 /// An toàn: nếu AVAudioEngine/đọc WAV lỗi ở bất kỳ điểm nào, tự rơi về đường
 /// AVAudioPlayer cũ (đã kiểm chứng chạy nền trên máy thật) cho cả phiên chạy.
 public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
-    public struct Item { let text: String; let chapter: String; let paraEnd: Bool }
+    /// cont (1.8.1): còn đoạn tiếp của CÙNG câu theo sau (câu dài bị chẻ nhỏ ở
+    /// phía web) — hết đoạn này dùng khoảng nghỉ dấu phẩy thay vì nghỉ hết câu.
+    public struct Item { let text: String; let chapter: String; let paraEnd: Bool; let cont: Bool = false }
     public struct AudioSettings {
         var volume: Float = 1.0        // 0..1
         var pitchCents: Float = 0      // -1200..1200 (100 cent = 1 bán âm)
@@ -282,6 +284,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
                 return
             }
             self.prefetch(next: idx + 1)
+            self.prefetch(next: idx + 2)
             self.trimCache(around: idx)
             if self.useEngine {
                 if !self.scheduleOnEngine(datas: datas, item: item, gen: gen, idx: idx) {
@@ -383,7 +386,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             if i > 0, settings.gapComma >= 0.05, let s = silenceBuffer(format: format, seconds: settings.gapComma) { plan.append(s) }
             plan.append(b)
         }
-        let endGap = item.paraEnd ? settings.gapParagraph : settings.gapSentence
+        let endGap = item.paraEnd ? settings.gapParagraph : (item.cont ? settings.gapComma : settings.gapSentence)
         if endGap >= 0.02, let s = silenceBuffer(format: format, seconds: endGap) { plan.append(s) }
         guard !plan.isEmpty else { return false }
         engineBusy = true
@@ -417,7 +420,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
               let player = try? AVAudioPlayer(data: fallbackDatas[fallbackClause]) else {
             // Hết mệnh đề: chờ khoảng nghỉ cuối câu rồi chuyển (đường này không
             // chèn được buffer im lặng nên dùng hẹn giờ trên hàng đợi phát)
-            let gap = item.paraEnd ? settings.gapParagraph : settings.gapSentence
+            let gap = item.paraEnd ? settings.gapParagraph : (item.cont ? settings.gapComma : settings.gapSentence)
             queue.asyncAfter(deadline: .now() + max(0, gap)) { [weak self] in
                 guard let self, gen == self.generation, self.playing, self.index == idx else { return }
                 self.advance()
