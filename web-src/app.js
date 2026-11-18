@@ -6,6 +6,7 @@ import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/
 import { buildBackup, parseBackup } from "./lib/backup.js";
 import { computeListeningStats, formatDuration, isFinished } from "./lib/stats.js";
 import { filterBooks, sortBooks } from "./lib/library.js";
+import { nowPlayingInfo, clampSeekIndex } from "./lib/nowPlaying.js";
 import { loadGlobalDict, saveGlobalDict, mergeDicts } from "./lib/dict.js";
 import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
 
@@ -33,7 +34,9 @@ state.player = new Player({
   onSentence: (idx, s) => {
     $("playerSentence").textContent = s.original;
     if (!seekDragging) $("seekSlider").value = String(idx);
+    if (!npSeeking) $("npSeek").value = String(idx);
     $("playerProgress").textContent = `Câu ${idx + 1} / ${state.player.sentences.length} · ${s.chapterTitle || ""}`;
+    refreshNowPlaying(idx, s);
     highlightSentence(idx);
     refreshBmBtn();
     store.setProgress(state.book.id, {
@@ -43,18 +46,26 @@ state.player = new Player({
       lastListenedAt: Date.now(),
     }).catch(() => {});
   },
-  onState: (playing) => { $("playBtn").textContent = playing ? "⏸" : "▶"; },
+  onState: (playing) => {
+    $("playBtn").textContent = playing ? "⏸" : "▶";
+    $("npPlayBtn").textContent = playing ? "⏸" : "▶";
+  },
   onProgress: (pct) => { $("playerProgress").textContent = `Đang chuẩn bị sách… ${pct}%`; },
 });
-$("playBtn").addEventListener("click", () => {
+function togglePlay() {
   const p = state.player;
   if (p.playing) p.pause();
   else if (p.index >= 0) p.resume();
   else p.play(state.sentenceOffset || 0);
-});
+}
+$("playBtn").addEventListener("click", togglePlay);
+$("npPlayBtn").addEventListener("click", togglePlay);
 $("nextBtn").addEventListener("click", () => state.player.next());
+$("npNextBtn").addEventListener("click", () => state.player.next());
 $("prevBtn").addEventListener("click", () => state.player.prev());
-$("speedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); });
+$("npPrevBtn").addEventListener("click", () => state.player.prev());
+$("speedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("npSpeedSelect").value = e.target.value; });
+$("npSpeedSelect").addEventListener("change", (e) => { state.player.setSpeed(parseFloat(e.target.value)); $("speedSelect").value = e.target.value; });
 $("sleepSelect").addEventListener("change", (e) => {
   const v = e.target.value;
   if (v === "off") state.player.setSleep("off");
@@ -74,6 +85,63 @@ $("seekSlider").addEventListener("change", () => {
   seekDragging = false;
   if (state.book) state.player.play(parseInt($("seekSlider").value, 10));
 });
+
+// ---------- Màn hình Đang nghe toàn màn hình (1.8.0) ----------
+let npSeeking = false;
+let npCoverUrl = null;
+function refreshNowPlaying(idx, s) {
+  const p = state.player;
+  const info = nowPlayingInfo({
+    title: state.book?.title || p.book?.title,
+    author: state.book?.author || p.book?.author,
+    chapterTitle: s?.chapterTitle || "",
+    sentence: s?.original || "—",
+    index: idx >= 0 ? idx : p.index,
+    total: p.sentences.length,
+  });
+  $("npTitle").textContent = info.title;
+  $("npAuthor").textContent = info.author;
+  $("npChapter").textContent = info.chapterTitle;
+  $("npSentence").textContent = info.sentence;
+  $("npProgress").textContent = `${info.progressText} · ${info.percent}%`;
+  $("npSeek").max = String(info.seekMax);
+  if (!npSeeking) $("npSeek").value = String(info.seekValue);
+  $("npCoverLetter").textContent = info.coverLetter;
+}
+async function loadNowPlayingCover() {
+  if (!state.book) return;
+  const blob = await store.getCover(state.book.id).catch(() => null);
+  if (npCoverUrl) { URL.revokeObjectURL(npCoverUrl); npCoverUrl = null; }
+  if (blob) {
+    npCoverUrl = URL.createObjectURL(blob);
+    $("npCover").src = npCoverUrl;
+    $("npCover").classList.remove("hidden");
+    $("npCoverLetter").classList.add("hidden");
+  } else {
+    $("npCover").classList.add("hidden");
+    $("npCoverLetter").classList.remove("hidden");
+  }
+}
+function openNowPlaying() {
+  if (!state.book) return;
+  refreshNowPlaying(state.player.index, state.player.sentences[state.player.index]);
+  $("nowPlaying").classList.remove("hidden");
+}
+function closeNowPlaying() { $("nowPlaying").classList.add("hidden"); }
+$("npOpenBtn").addEventListener("click", openNowPlaying);
+$("playerInfo").addEventListener("click", openNowPlaying);
+$("npCloseBtn").addEventListener("click", closeNowPlaying);
+$("npSeek").addEventListener("pointerdown", () => { npSeeking = true; });
+$("npSeek").addEventListener("input", () => {
+  const s = state.player.sentences[clampSeekIndex(parseInt($("npSeek").value, 10), state.player.sentences.length)];
+  if (s) $("npSentence").textContent = s.original;
+});
+$("npSeek").addEventListener("change", () => {
+  npSeeking = false;
+  if (state.book) state.player.play(clampSeekIndex(parseInt($("npSeek").value, 10), state.player.sentences.length));
+});
+// Tuỳ chỉnh nằm ở thanh phát nhỏ (bị màn hình này che) nên đóng màn hình rồi mở panel.
+$("npAudioBtn").addEventListener("click", () => { closeNowPlaying(); $("audioPanel").classList.remove("hidden"); });
 
 // Panel Âm thanh (1.0.6): âm lượng / tông giọng / khoảng nghỉ
 $("audioBtn").addEventListener("click", () => $("audioPanel").classList.toggle("hidden"));
@@ -310,6 +378,10 @@ async function openBook(id, autoplay = false) {
   }
   $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
   $("seekSlider").value = String(Math.max(0, startSentence));
+  $("npSeek").max = String(Math.max(0, state.player.sentences.length - 1));
+  $("npSeek").value = String(Math.max(0, startSentence));
+  loadNowPlayingCover();
+  refreshNowPlaying(startSentence > 0 ? startSentence : -1, state.player.sentences[startSentence]);
   state.bookmarks = await store.listBookmarks(id);
   renderBookmarks();
   refreshBmBtn();
@@ -403,6 +475,8 @@ function showChapter(ci) {
       // Từ điển đổi nên cache cũ vô hiệu, load đã dựng cache mới — lưu lại.
       if (state.player.lastSpokenCache) await store.setProgress(state.book.id, { spokenCache: state.player.lastSpokenCache });
       $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
+      $("npSeek").max = String(Math.max(0, state.player.sentences.length - 1));
+      refreshNowPlaying(state.player.index, state.player.sentences[state.player.index]);
       alert(`Đã nhớ: từ nay “${word}” đọc là “${reading}” ${allBooks ? "trong mọi sách" : "trong sách này"}.`);
     });
   });

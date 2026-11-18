@@ -105,11 +105,12 @@
 
 <!-- THANH PHÁT -->
 <footer id="playerBar" class="player hidden">
-  <div class="player-info">
+  <div class="player-info" id="playerInfo" title="Mở màn hình Đang nghe">
     <div id="playerTitle" class="player-title">—</div>
     <div id="playerSentence" class="player-sentence">—</div>
   </div>
   <div class="player-controls">
+    <button id="npOpenBtn" class="icon-btn" title="Mở màn hình Đang nghe">⤢</button>
     <select id="voiceSelect" class="select small"></select>
     <button id="prevBtn" class="icon-btn" title="Câu trước">⏮</button>
     <button id="playBtn" class="icon-btn big" title="Nghe / dừng">▶</button>
@@ -142,6 +143,36 @@
   </div>
   <div id="playerProgress" class="player-progress"></div>
 </footer>
+
+<!-- MÀN HÌNH ĐANG NGHE (1.8.0): bìa lớn + tên sách/chương lớn + câu đang đọc -->
+<section id="nowPlaying" class="now-playing hidden" aria-label="Đang nghe">
+  <div class="np-top">
+    <button id="npCloseBtn" class="btn small">‹ Thu gọn</button>
+    <span class="chip">Đang nghe</span>
+  </div>
+  <div class="np-cover-wrap">
+    <img id="npCover" class="np-cover hidden" alt="">
+    <span id="npCoverLetter" class="np-cover np-cover-letter">?</span>
+  </div>
+  <h2 id="npTitle" class="np-title">—</h2>
+  <p id="npAuthor" class="np-author muted"></p>
+  <p id="npChapter" class="np-chapter"></p>
+  <p id="npSentence" class="np-sentence">—</p>
+  <input id="npSeek" type="range" min="0" max="0" step="1" value="0" class="np-seek" title="Kéo để nhảy tới câu">
+  <p id="npProgress" class="np-progress muted tnum"></p>
+  <div class="np-controls">
+    <button id="npPrevBtn" class="icon-btn np-big" title="Câu trước">⏮</button>
+    <button id="npPlayBtn" class="icon-btn big np-play" title="Nghe / dừng">▶</button>
+    <button id="npNextBtn" class="icon-btn np-big" title="Câu sau">⏭</button>
+  </div>
+  <div class="np-subcontrols">
+    <select id="npSpeedSelect" class="select small" title="Tốc độ đọc">
+      <option value="0.75">0.75×</option><option value="1" selected>1×</option>
+      <option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+    </select>
+    <button id="npAudioBtn" class="btn small">Tuỳ chỉnh</button>
+  </div>
+</section>
 
 <script type="module" src="app.js"></script>
 </body>
