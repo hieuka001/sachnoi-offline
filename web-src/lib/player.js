@@ -4,6 +4,7 @@
 
 import { prepareForSpeech, cleanupText, splitSentences } from "../text-engine/index.js";
 import { buildBookSentencesAsync } from "./spokenCache.js";
+import { buildPlaybackItems } from "./playbackChunks.js";
 import { EXTRACT_VERSION } from "./extract.js";
 
 export const native = () => window.Capacitor?.Plugins?.SachNoiBridge ?? null;
