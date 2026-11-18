@@ -199,8 +199,533 @@
       "expected": "nó có hai triệu mốt trong túi.",
       "group": "tien-noi",
       "input": "Nó có 2 triệu mốt trong túi."
+    },
+    {
+      "expected": "giá năm mươi nghìn đồng.",
+      "group": "tien-te",
+      "input": "Giá 50.000 đồng."
+    },
+    {
+      "expected": "lương mười hai phẩy năm triệu đồng.",
+      "group": "tien-te",
+      "input": "Lương 12,5 triệu đồng."
+    },
+    {
+      "expected": "mua với giá chín mươi chín đô la mỹ.",
+      "group": "tien-te",
+      "input": "Mua với giá 99 USD."
+    },
+    {
+      "expected": "thuế giá trị gia tăng là mười phần trăm.",
+      "group": "tien-te",
+      "input": "VAT là 10%."
+    },
+    {
+      "expected": "trả một triệu hai trăm nghìn đồng.",
+      "group": "tien-te",
+      "input": "Trả 1.200.000 VND."
+    },
+    {
+      "expected": "giá hai phẩy năm ơ rô.",
+      "group": "tien-te",
+      "input": "Giá 2,5 EUR."
+    },
+    {
+      "expected": "tiết kiệm năm trăm nghìn đồng mỗi tháng.",
+      "group": "tien-te",
+      "input": "Tiết kiệm 500 nghìn đồng mỗi tháng."
+    },
+    {
+      "expected": "còn ba triệu rưỡi.",
+      "group": "tien-te",
+      "input": "Còn 3 triệu rưỡi."
+    },
+    {
+      "expected": "giá hai triệu năm trăm nghìn đồng một tháng.",
+      "group": "tien-te",
+      "input": "Giá 2.500.000 đồng một tháng."
+    },
+    {
+      "expected": "còn mười nghìn đồng lẻ.",
+      "group": "tien-te",
+      "input": "Còn 10.000 đồng lẻ."
+    },
+    {
+      "expected": "gấp đôi hai trăm năm mươi nghìn đồng.",
+      "group": "tien-te",
+      "input": "Gấp đôi 250.000 đồng."
+    },
+    {
+      "expected": "có một triệu người.",
+      "group": "tien-te",
+      "input": "Có 1.000.000 người."
+    },
+    {
+      "expected": "ngày một tháng một năm hai nghìn.",
+      "group": "ngay-gio",
+      "input": "Ngày 1/1/2000."
+    },
+    {
+      "expected": "sinh ngày ba mươi tháng bốn năm một nghìn chín trăm bảy mươi lăm.",
+      "group": "ngay-gio",
+      "input": "Sinh ngày 30/4/1975."
+    },
+    {
+      "expected": "tháng năm năm hai nghìn không trăm hai mươi tư bắt đầu.",
+      "group": "ngay-gio",
+      "input": "Tháng 5/2024 bắt đầu."
+    },
+    {
+      "expected": "ngày tám tháng ba là ngày quốc tế phụ nữ.",
+      "group": "ngay-gio",
+      "input": "Ngày 8/3 là ngày Quốc tế Phụ nữ."
+    },
+    {
+      "expected": "thế kỷ hai mươi mốt bắt đầu.",
+      "group": "ngay-gio",
+      "input": "Thế kỷ XXI bắt đầu."
+    },
+    {
+      "expected": "vào thế kỷ mười chín, nhiều thay đổi.",
+      "group": "ngay-gio",
+      "input": "Vào thế kỷ XIX, nhiều thay đổi."
+    },
+    {
+      "expected": "ngày hai mươi chín tháng hai năm hai nghìn không trăm hai mươi tư là năm nhuận.",
+      "group": "ngay-gio",
+      "input": "Ngày 29/2/2024 là năm nhuận."
+    },
+    {
+      "expected": "lúc bảy giờ sáng.",
+      "group": "ngay-gio",
+      "input": "Lúc 7h00 sáng."
+    },
+    {
+      "expected": "hẹn hai mươi giờ bốn mươi lăm tối nay.",
+      "group": "ngay-gio",
+      "input": "Hẹn 20:45 tối nay."
+    },
+    {
+      "expected": "năm hai nghìn không trăm hai mươi lăm đã qua.",
+      "group": "ngay-gio",
+      "input": "Năm 2025 đã qua."
+    },
+    {
+      "expected": "sinh năm một nghìn chín trăm chín mươi.",
+      "group": "ngay-gio",
+      "input": "Sinh năm 1990."
+    },
+    {
+      "expected": "kỷ niệm ngày mười tháng mười năm hai nghìn không trăm mười.",
+      "group": "ngay-gio",
+      "input": "Kỷ niệm 10/10/2010."
+    },
+    {
+      "expected": "tháng chín năm một nghìn chín trăm bốn mươi lăm lịch sử.",
+      "group": "ngay-gio",
+      "input": "Tháng IX/1945 lịch sử."
+    },
+    {
+      "expected": "chương hai mươi kết thúc.",
+      "group": "ngay-gio",
+      "input": "Chương XX kết thúc."
+    },
+    {
+      "expected": "năm hai nghìn, thế giới bước sang thiên niên kỷ mới.",
+      "group": "ngay-gio",
+      "input": "Năm 2000, thế giới bước sang thiên niên kỷ mới."
+    },
+    {
+      "expected": "giảm năm mươi phần trăm hôm nay.",
+      "group": "phan-tram",
+      "input": "Giảm 50% hôm nay."
+    },
+    {
+      "expected": "lãi suất bảy phẩy năm phần trăm một năm.",
+      "group": "phan-tram",
+      "input": "Lãi suất 7,5% một năm."
+    },
+    {
+      "expected": "đạt một trăm phần trăm chỉ tiêu.",
+      "group": "phan-tram",
+      "input": "Đạt 100% chỉ tiêu."
+    },
+    {
+      "expected": "tăng mười hai phẩy năm phần trăm so với trước.",
+      "group": "phan-tram",
+      "input": "Tăng 12,5% so với trước."
+    },
+    {
+      "expected": "chỉ còn năm phần trăm pin.",
+      "group": "phan-tram",
+      "input": "Chỉ còn 5% pin."
+    },
+    {
+      "expected": "thuế tám phần trăm đã bao gồm.",
+      "group": "phan-tram",
+      "input": "Thuế 8% đã bao gồm."
+    },
+    {
+      "expected": "giảm giá ba mươi phần trăm cho sinh viên.",
+      "group": "phan-tram",
+      "input": "Giảm giá 30% cho sinh viên."
+    },
+    {
+      "expected": "ăn một phần hai cái bánh.",
+      "group": "phan-so-ti-so",
+      "input": "Ăn 1/2 cái bánh."
+    },
+    {
+      "expected": "uống ba phần bốn lít nước.",
+      "group": "phan-so-ti-so",
+      "input": "Uống 3/4 lít nước."
+    },
+    {
+      "expected": "còn một phần bốn giờ nữa.",
+      "group": "phan-so-ti-so",
+      "input": "Còn 1/4 giờ nữa."
+    },
+    {
+      "expected": "tỉ số ba một nghiêng về đội nhà.",
+      "group": "phan-so-ti-so",
+      "input": "Tỉ số 3-1 nghiêng về đội nhà."
+    },
+    {
+      "expected": "pha một phần ba cốc đường.",
+      "group": "phan-so-ti-so",
+      "input": "Pha 1/3 cốc đường."
+    },
+    {
+      "expected": "ăn hai phần năm cái bánh còn lại.",
+      "group": "phan-so-ti-so",
+      "input": "Ăn 2/5 cái bánh còn lại."
+    },
+    {
+      "expected": "chia năm phần tám chiếc bánh.",
+      "group": "phan-so-ti-so",
+      "input": "Chia 5/8 chiếc bánh."
+    },
+    {
+      "expected": "nhà ở quận ba, thành phố hồ chí minh.",
+      "group": "dia-chi",
+      "input": "Nhà ở Q.3, TP. Hồ Chí Minh."
+    },
+    {
+      "expected": "số mười hai đường nguyễn trãi, phường năm.",
+      "group": "dia-chi",
+      "input": "Số 12 đường Nguyễn Trãi, P.5."
+    },
+    {
+      "expected": "địa chỉ: một trăm hai mươi ba lê lợi, quận một.",
+      "group": "dia-chi",
+      "input": "Địa chỉ: 123 Lê Lợi, Q.1."
+    },
+    {
+      "expected": "ở phường bảy, quận tám.",
+      "group": "dia-chi",
+      "input": "Ở phường 7, quận 8."
+    },
+    {
+      "expected": "chung cư ở tầng mười hai, phòng ba trăm lẻ năm.",
+      "group": "dia-chi",
+      "input": "Chung cư ở tầng 12, phòng 305."
+    },
+    {
+      "expected": "đọc trang bốn mươi lăm trong sách.",
+      "group": "dia-chi",
+      "input": "Đọc tr. 45 trong sách."
+    },
+    {
+      "expected": "xem mục năm trong chương này.",
+      "group": "dia-chi",
+      "input": "Xem §5 trong chương này."
+    },
+    {
+      "expected": "đọc mục hai rồi nghỉ.",
+      "group": "dia-chi",
+      "input": "Đọc §II rồi nghỉ."
+    },
+    {
+      "expected": "mục ba: quy tắc thứ ba.",
+      "group": "dia-chi",
+      "input": "§III: quy tắc thứ ba."
+    },
+    {
+      "expected": "bác sĩ nguyễn khám cho bệnh nhân.",
+      "group": "viet-tat-y-khoa",
+      "input": "BS. Nguyễn khám cho BN."
+    },
+    {
+      "expected": "bệnh nhân bị đái tháo đường và tăng huyết áp.",
+      "group": "viet-tat-y-khoa",
+      "input": "BN bị ĐTĐ và THA."
+    },
+    {
+      "expected": "đo huyết áp một trăm bốn mươi trên chín mươi mi li mét thủy ngân.",
+      "group": "viet-tat-y-khoa",
+      "input": "Đo HA 140/90 mmHg."
+    },
+    {
+      "expected": "làm xét nghiệm máu sáng nay.",
+      "group": "viet-tat-y-khoa",
+      "input": "Làm XN máu sáng nay."
+    },
+    {
+      "expected": "bệnh viện chợ rẫy tiếp nhận bệnh nhân nặng.",
+      "group": "viet-tat-y-khoa",
+      "input": "BV Chợ Rẫy tiếp nhận BN nặng."
+    },
+    {
+      "expected": "cần chụp em rai và xê tê não.",
+      "group": "viet-tat-y-khoa",
+      "input": "Cần chụp MRI và CT não."
+    },
+    {
+      "expected": "bệnh nhân nằm hồi sức tích cực ba ngày.",
+      "group": "viet-tat-y-khoa",
+      "input": "BN nằm ICU 3 ngày."
+    },
+    {
+      "expected": "đường huyết sáu phẩy năm mi li mol trên lít.",
+      "group": "viet-tat-y-khoa",
+      "input": "Đường huyết 6,5 mmol/L."
+    },
+    {
+      "expected": "tiêm mười mi li gam kháng sinh.",
+      "group": "viet-tat-y-khoa",
+      "input": "Tiêm 10 mg kháng sinh."
+    },
+    {
+      "expected": "truyền năm trăm mi li lít nước muối.",
+      "group": "viet-tat-y-khoa",
+      "input": "Truyền 500 ml nước muối."
+    },
+    {
+      "expected": "nhiệt độ ba mươi chín độ xê, cần hạ sốt.",
+      "group": "viet-tat-y-khoa",
+      "input": "Nhiệt độ 39°C, cần hạ sốt."
+    },
+    {
+      "expected": "sp o hai chín mươi lăm phần trăm là bình thường.",
+      "group": "viet-tat-y-khoa",
+      "input": "SpO2 95% là bình thường."
+    },
+    {
+      "expected": "huyết áp một trăm ba mươi trên tám mươi lăm mi li mét thủy ngân là cao.",
+      "group": "viet-tat-y-khoa",
+      "input": "Huyết áp 130/85 mmHg là cao."
+    },
+    {
+      "expected": "đường huyết năm phẩy sáu mi li mol trên lít lúc đói.",
+      "group": "viet-tat-y-khoa",
+      "input": "Đường huyết 5,6 mmol/L lúc đói."
+    },
+    {
+      "expected": "cân nặng sáu mươi lăm phẩy năm ki lô gam.",
+      "group": "viet-tat-y-khoa",
+      "input": "Cân nặng 65,5 kg."
+    },
+    {
+      "expected": "liều năm trăm mi li gam, ngày hai lần.",
+      "group": "viet-tat-y-khoa",
+      "input": "Liều 500 mg, ngày 2 lần."
+    },
+    {
+      "expected": "uống một viên, ngày ba lần.",
+      "group": "viet-tat-y-khoa",
+      "input": "Uống 1 viên, ngày 3 lần."
+    },
+    {
+      "expected": "lão tử nói về đạo.",
+      "group": "tien-hiep",
+      "input": "Lão Tử nói về Đạo."
+    },
+    {
+      "expected": "tu sĩ luyện khí đến trúc cơ.",
+      "group": "tien-hiep",
+      "input": "Tu sĩ luyện khí đến Trúc Cơ."
+    },
+    {
+      "expected": "hắn đột phá kim đan kỳ.",
+      "group": "tien-hiep",
+      "input": "Hắn đột phá Kim Đan kỳ."
+    },
+    {
+      "expected": "nguyên anh lão quái xuất hiện.",
+      "group": "tien-hiep",
+      "input": "Nguyên Anh lão quái xuất hiện."
+    },
+    {
+      "expected": "phi kiếm bay vút lên trời.",
+      "group": "tien-hiep",
+      "input": "Phi kiếm bay vút lên trời."
+    },
+    {
+      "expected": "đan dược này giúp tăng tu vi.",
+      "group": "tien-hiep",
+      "input": "Đan dược này giúp tăng tu vi."
+    },
+    {
+      "expected": "trận pháp hộ sơn mở ra.",
+      "group": "tien-hiep",
+      "input": "Trận pháp hộ sơn mở ra."
+    },
+    {
+      "expected": "linh thạch thượng phẩm rất quý.",
+      "group": "tien-hiep",
+      "input": "Linh thạch thượng phẩm rất quý."
+    },
+    {
+      "expected": "võ hồn đọa lạc thiên sứ mạnh mẽ.",
+      "group": "tien-hiep",
+      "input": "Võ hồn Đọa Lạc Thiên Sứ mạnh mẽ."
+    },
+    {
+      "expected": "hắn bế quan ba năm trong động phủ.",
+      "group": "tien-hiep",
+      "input": "Hắn bế quan ba năm trong động phủ."
+    },
+    {
+      "expected": "liên hệ không chín một hai, ba bốn năm, sáu bảy tám.",
+      "group": "dien-thoai-ma-so",
+      "input": "Liên hệ 0912 345 678."
+    },
+    {
+      "expected": "số máy bàn không hai tám, ba tám hai ba, bốn năm sáu bảy.",
+      "group": "dien-thoai-ma-so",
+      "input": "Số máy bàn 028 3823 4567."
+    },
+    {
+      "expected": "nhắn không chín tám bảy, sáu năm bốn, ba hai một nhé.",
+      "group": "dien-thoai-ma-so",
+      "input": "Nhắn 0987.654.321 nhé."
+    },
+    {
+      "expected": "số không một hai ba bốn năm sáu bảy tám chín gọi lại.",
+      "group": "dien-thoai-ma-so",
+      "input": "Số 0123456789 gọi lại."
+    },
+    {
+      "expected": "sinh năm một nghìn chín trăm tám mươi lăm tại hà nội.",
+      "group": "nam-lich-su",
+      "input": "Sinh năm 1985 tại Hà Nội."
+    },
+    {
+      "expected": "mất năm một nghìn chín trăm bốn mươi lăm.",
+      "group": "nam-lich-su",
+      "input": "Mất năm 1945."
+    },
+    {
+      "expected": "thế kỷ hai mươi có nhiều biến động.",
+      "group": "nam-lich-su",
+      "input": "Thế kỷ XX có nhiều biến động."
+    },
+    {
+      "expected": "vào thế kỷ mười tám, châu âu thay đổi.",
+      "group": "nam-lich-su",
+      "input": "Vào thế kỷ XVIII, châu Âu thay đổi."
+    },
+    {
+      "expected": "chương chín mở đầu phần hai.",
+      "group": "nam-lich-su",
+      "input": "Chương IX mở đầu phần hai."
+    },
+    {
+      "expected": "phần ba nói về lịch sử.",
+      "group": "nam-lich-su",
+      "input": "Phần III nói về lịch sử."
+    },
+    {
+      "expected": "tập bảy đã phát hành.",
+      "group": "nam-lich-su",
+      "input": "Tập VII đã phát hành."
+    },
+    {
+      "expected": "ông sinh năm một nghìn chín trăm.",
+      "group": "nam-lich-su",
+      "input": "Ông sinh năm 1900."
+    },
+    {
+      "expected": "thế kỷ mười lăm là thời phục hưng.",
+      "group": "nam-lich-su",
+      "input": "Thế kỷ XV là thời Phục Hưng."
+    },
+    {
+      "expected": "ngày mười lăm tháng tám năm một nghìn chín trăm bốn mươi lăm lịch sử.",
+      "group": "nam-lich-su",
+      "input": "Ngày 15/8/1945 lịch sử."
+    },
+    {
+      "expected": "có không người.",
+      "group": "so-bien-am",
+      "input": "Có 0 người."
+    },
+    {
+      "expected": "năm chín tuổi.",
+      "group": "so-bien-am",
+      "input": "Năm 9 tuổi."
+    },
+    {
+      "expected": "có một triệu người.",
+      "group": "so-bien-am",
+      "input": "Có 1000000 người."
+    },
+    {
+      "expected": "chạy mười ki lô mét mỗi ngày.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Chạy 10 km mỗi ngày."
+    },
+    {
+      "expected": "uống hai lít nước.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Uống 2 lít nước."
+    },
+    {
+      "expected": "diện tích năm mươi mét vuông.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Diện tích 50 m2."
+    },
+    {
+      "expected": "tốc độ sáu mươi ki lô mét trên giờ.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Tốc độ 60 km/h."
+    },
+    {
+      "expected": "nhiệt độ một trăm độ ép.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Nhiệt độ 100°F."
+    },
+    {
+      "expected": "tần số năm mươi héc.",
+      "group": "tien-don-vi-y-khoa",
+      "input": "Tần số 50 Hz."
+    },
+    {
+      "expected": "giáo sư tiến sĩ trần văn b giảng bài.",
+      "group": "viet-tat",
+      "input": "GS.TS. Trần Văn B giảng bài."
+    },
+    {
+      "expected": "thạc sĩ lan dạy môn toán.",
+      "group": "viet-tat",
+      "input": "ThS. Lan dạy môn Toán."
+    },
+    {
+      "expected": "theo quyết định một trăm hai mươi ba của thủ tướng.",
+      "group": "viet-tat",
+      "input": "Theo QĐ 123 của TTg."
+    },
+    {
+      "expected": "ép bi ai điều tra vụ án.",
+      "group": "viet-tat",
+      "input": "FBI điều tra vụ án."
+    },
+    {
+      "expected": "na xa phóng tên lửa.",
+      "group": "viet-tat",
+      "input": "NASA phóng tên lửa."
     }
   ],
-  "note": "Bộ khởi động 40 câu mẫu — bản đầy đủ mở rộng lên 1.000 câu theo quota Phần C1 của THIET-KE-FULL.md. Mỗi câu: input -> expected (text sau chuẩn hoá, viết thường để đưa vào TTS).",
-  "version": "1.0-starter"
+  "note": "Bộ vàng mở rộng: 40 câu khởi động + 105 câu vòng 1.3.1 (tiền tệ, ngày tháng, phần trăm, phân số, địa chỉ, viết tắt y khoa, thuật ngữ tiên hiệp, số điện thoại, năm sinh/thế kỷ La Mã). Mỗi câu: input -> expected (text sau chuẩn hoá, viết thường để đưa vào TTS). Mỗi expected đã chạy qua engine thật khi viết; 4 lỗi engine do bộ này phát hiện đã sửa ở normalize.js (ngày thiếu năm, tháng La Mã nhân đôi, đơn vị ha ăn đuôi từ, § + số).",
+  "version": "1.1-expanded"
 }

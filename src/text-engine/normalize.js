@@ -88,7 +88,11 @@ export function normalizeForSpeech(rawText, opts = {}) {
   // Ngày tháng: dd/mm/yyyy · mm/yyyy · tháng La Mã/yyyy
   t = t.replace(/(ngày\s+)?(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/gi, (m0, pre, d, m, y) =>
     `${pre ? "ngày " : "ngày "}${numberToVietnamese(d)} tháng ${numberToVietnamese(m)} năm ${numberToVietnamese(y)}`);
-  t = t.replace(/\b([IVXLCDM]{1,4})\/(\d{4})\b/g, (_, r, y) =>
+  // Ngày tháng thiếu năm: "Ngày 8/3" -> "ngày tám tháng ba" (trước rule phân số,
+  // chỉ khi có chữ "ngày" đứng trước — "1/2" trần vẫn là phân số)
+  t = t.replace(/(ngày\s+)(\d{1,2})[\/.](\d{1,2})\b/gi, (_, pre, d, m) =>
+    `ngày ${numberToVietnamese(d)} tháng ${numberToVietnamese(m)}`);
+  t = t.replace(/(?:tháng\s+|Tháng\s+)?([IVXLCDM]{1,4})\/(\d{4})\b/g, (_, r, y) =>
     `tháng ${numberToVietnamese(romanToInt(r))} năm ${numberToVietnamese(y)}`);
   t = t.replace(/(tháng\s+)?(\d{1,2})[\/.](\d{4})\b/gi, (m0, pre, m, y) =>
     `tháng ${numberToVietnamese(m)} năm ${numberToVietnamese(y)}`);
@@ -98,6 +102,12 @@ export function normalizeForSpeech(rawText, opts = {}) {
     +m === 0 ? `${numberToVietnamese(h)} giờ` : `${numberToVietnamese(h)} giờ ${numberToVietnamese(m)}`);
   t = t.replace(/\b(\d{1,2}):(\d{2})\b/g, (_, h, m) =>
     +m === 0 ? `${numberToVietnamese(h)} giờ` : `${numberToVietnamese(h)} giờ ${numberToVietnamese(m)}`);
+
+  // Ký hiệu § (tiết/mục trong sách): "§II" -> "mục hai", "§3" -> "mục ba".
+  // PHẢI chạy trước bước đổi số chung — nếu không "§5" bị đổi thành "§năm" trước.
+  t = t.replace(/§\s*([IVXLCDM]{1,7})(?![\p{L}\d])/gu, (_, r) => (isRoman(r) ? `mục ${numberToVietnamese(romanToInt(r))}` : `mục ${r}`));
+  t = t.replace(/§\s*(\d+)/g, (_, n) => `mục ${numberToVietnamese(n)}`);
+  t = t.replace(/§/g, "mục");
 
   // Huyết áp 120/80 mmHg — trước phân số và đơn vị
   t = t.replace(/\b(\d{2,3})\/(\d{2,3})\s*mmHg\b/g, (_, a, b) =>
@@ -137,11 +147,6 @@ export function normalizeForSpeech(rawText, opts = {}) {
   t = t.replace(/\b\d+\.\d{1,2}\b/g, (m) => numericTokenToWords(m));
   t = t.replace(/\b\d+\b/g, (m) => numberToVietnamese(m));
 
-  // Ký hiệu § (tiết/mục trong sách): "§II" -> "mục hai", "§3" -> "mục ba"
-  t = t.replace(/§\s*([IVXLCDM]{1,7})(?![\p{L}\d])/gu, (_, r) => (isRoman(r) ? `mục ${numberToVietnamese(romanToInt(r))}` : `mục ${r}`));
-  t = t.replace(/§\s*(\d+)/g, (_, n) => `mục ${numberToVietnamese(n)}`);
-  t = t.replace(/§/g, "mục");
-
   // Số La Mã theo ngữ cảnh + đứng độc lập (trước bước đánh vần chữ hoa)
   t = t.replace(/(?<![\p{L}\d])(thế kỷ|chương|phần|tập|mục)\s+([IVXLCDM]{1,7})(?![\p{L}\d])/giu, (_, w, r) =>
     isRoman(r.toUpperCase()) ? `${w.toLowerCase()} ${numberToVietnamese(romanToInt(r.toUpperCase()))}` : _);
@@ -160,9 +165,16 @@ export function normalizeForSpeech(rawText, opts = {}) {
   t = t.replace(/(\p{L})-(\d[\d\s]*\d|\d)/gu, (_, w, n) => `${w} ${numberToVietnamese(n.replace(/\s/g, ""))}`);
 
   // Đơn vị đo nhiều ký tự (đơn vị 1 ký tự chỉ mở khi đứng ngay sau số — đã thành chữ nên bỏ qua ở bản 1.0)
+  // Lookbehind (?<![\p{L}]) sau \s*: đơn vị không được dính vào đuôi một từ
+  // ("Pha" chứa "ha" nhưng không phải đơn vị héc-ta; "10mg"/"10 mg" vẫn khớp).
   const unitKeys = Object.keys(UNITS).filter((k) => k.length > 1).sort((a, b) => b.length - a.length);
   for (const k of unitKeys) {
-    t = t.replace(new RegExp(`\\s*${esc(k)}(?![\\p{L}\\d])`, "gu"), ` ${UNITS[k]}`);
+    // Key bắt đầu bằng chữ (mg, km, ha...): cấm dính đuôi từ. Key bắt đầu bằng
+    // ký hiệu (°C, °F): giữ như cũ — nó thường dính ngay sau số/chữ ("37,5°C").
+    const pat = /^\p{L}/u.test(k)
+      ? `\\s*(?<![\\p{L}])${esc(k)}(?![\\p{L}\\d])`
+      : `\\s*${esc(k)}(?![\\p{L}\\d])`;
+    t = t.replace(new RegExp(pat, "gu"), ` ${UNITS[k]}`);
   }
   t = t.replace(/°/g, " độ ");
 
