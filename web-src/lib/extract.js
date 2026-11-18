@@ -90,6 +90,16 @@ export function isCoverLikeChapter(paragraphs) {
   return totalChars <= 220;
 }
 
+// Tìm ảnh bìa trong manifest EPUB: ưu tiên item gắn cờ "cover-image" (EPUB3),
+// sau tới id bìa khai trong <meta name="cover"> (EPUB2). Hàm thuần để test.
+export function findCoverHref(manifest, manifestProps, coverId) {
+  for (const id of Object.keys(manifest || {})) {
+    if (/\bcover-image\b/.test(manifestProps?.[id] || "")) return manifest[id];
+  }
+  if (coverId && manifest?.[coverId]) return manifest[coverId];
+  return null;
+}
+
 const stripExt = (n) => n.replace(/\.[^.]+$/, "");
 const clean = (s) => s.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 
@@ -152,7 +162,34 @@ async function extractEpub(file, name) {
   }
   const finalChapters = chapters.length ? chapters : allChapters;
   if (!finalChapters.length) throw new Error("Không trích được nội dung từ EPUB này.");
-  return { title, author, chapters: finalChapters, scanned: false, extractVersion: EXTRACT_VERSION };
+  // Ảnh bìa (1.2.0): trả kèm dạng Blob riêng — app lưu vào store "covers",
+  // KHÔNG nhét vào extractedCache (tránh phình bản ghi tiến độ).
+  let coverBlob = null;
+  try {
+    const coverId = opf.querySelector('metadata meta[name="cover"]')?.getAttribute("content") || null;
+    const coverHref = findCoverHref(manifest, manifestProps, coverId);
+    if (coverHref) {
+      const entry = zip.file(base + decodeURIComponent(coverHref.split("#")[0])) || zip.file(coverHref);
+      if (entry) coverBlob = await entry.async("blob");
+    }
+  } catch { coverBlob = null; }
+  return { title, author, chapters: finalChapters, scanned: false, extractVersion: EXTRACT_VERSION, coverBlob };
+}
+
+// Vẽ trang 1 PDF thành ảnh bìa nhỏ (1.2.0). Lỗi thì thôi — bìa chỉ là trang trí.
+async function pdfCoverBlob(pdf) {
+  try {
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(1, 360 / base.width) });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.8));
+    canvas.width = 0; canvas.height = 0;
+    return blob || null;
+  } catch { return null; }
 }
 
 // Gộp các dòng OCR thành đoạn: dòng không kết thúc bằng dấu câu + dòng sau
@@ -206,6 +243,7 @@ async function extractPdf(file, name, opts = {}) {
     cMapPacked: true,
     standardFontDataUrl: new URL("../vendor/standard_fonts/", import.meta.url).href,
   }).promise;
+  const coverBlob = await pdfCoverBlob(pdf);
   const chapters = [];
   let totalChars = 0;
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -243,7 +281,7 @@ async function extractPdf(file, name, opts = {}) {
         const ocrChapters = await ocrPdfPages(pdf, opts);
         const ocrChars = ocrChapters.reduce((a, c) => a + c.paragraphs.join("").length, 0);
         if (ocrChapters.length && ocrChars > 200) {
-          return { title: stripExt(name), author: "", chapters: ocrChapters, scanned: true, ocr: true, pages: pdf.numPages, extractVersion: EXTRACT_VERSION };
+          return { title: stripExt(name), author: "", chapters: ocrChapters, scanned: true, ocr: true, pages: pdf.numPages, extractVersion: EXTRACT_VERSION, coverBlob };
         }
         ocrNote = " Đã thử nhận dạng chữ (OCR) nhưng chữ nhận được quá ít — có thể bản scan quá mờ.";
       } catch (e) {
@@ -251,7 +289,7 @@ async function extractPdf(file, name, opts = {}) {
       }
     }
     return {
-      title: stripExt(name), author: "", scanned: true, pages: pdf.numPages, totalChars, extractVersion: EXTRACT_VERSION,
+      title: stripExt(name), author: "", scanned: true, pages: pdf.numPages, totalChars, extractVersion: EXTRACT_VERSION, coverBlob,
       chapters: [{
         title: "Sách scan — chưa đọc được",
         paragraphs: [`Sách này có ${pdf.numPages} trang nhưng chỉ trích được ${totalChars} ký tự chữ. Đây là sách scan dạng ảnh, không có lớp chữ bên dưới.${ocrNote} Tính năng nhận dạng chữ (OCR) chạy trong app iOS 16 trở lên; sách PDF có lớp chữ và EPUB vẫn đọc bình thường.`],
@@ -267,7 +305,7 @@ async function extractPdf(file, name, opts = {}) {
     return true;
   });
   if (!kept.length) kept = chapters;
-  return { title: stripExt(name), author: "", chapters: kept, scanned, pages: pdf.numPages, extractVersion: EXTRACT_VERSION };
+  return { title: stripExt(name), author: "", chapters: kept, scanned, pages: pdf.numPages, extractVersion: EXTRACT_VERSION, coverBlob };
 }
 
 // ---------- TXT / MD ----------

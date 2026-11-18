@@ -3,6 +3,8 @@ import { store, newId, formatBytes } from "./lib/store.js";
 import { extractBook, EXTRACT_VERSION } from "./lib/extract.js";
 import { Player, native, isNative } from "./lib/player.js";
 import { loadManifest, installedPackIds, downloadPack, deletePack } from "./lib/voices.js";
+import { buildBackup, parseBackup } from "./lib/backup.js";
+import { loadGlobalDict, saveGlobalDict, mergeDicts } from "./lib/dict.js";
 import { splitSentences, normalizeForSpeech, prepareForSpeech } from "./text-engine/index.js";
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +30,7 @@ document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click",
 state.player = new Player({
   onSentence: (idx, s) => {
     $("playerSentence").textContent = s.original;
+    if (!seekDragging) $("seekSlider").value = String(idx);
     $("playerProgress").textContent = `Câu ${idx + 1} / ${state.player.sentences.length} · ${s.chapterTitle || ""}`;
     highlightSentence(idx);
     refreshBmBtn();
@@ -57,6 +60,18 @@ $("sleepSelect").addEventListener("change", (e) => {
   else state.player.setSleep("minutes", parseInt(v, 10));
 });
 $("voiceSelect").addEventListener("change", (e) => { state.player.setVoice(e.target.value); });
+
+// Thanh kéo tiến độ (1.2.0): kéo để nhảy tới câu bất kỳ trong sách
+let seekDragging = false;
+$("seekSlider").addEventListener("pointerdown", () => { seekDragging = true; });
+$("seekSlider").addEventListener("input", () => {
+  const s = state.player.sentences[parseInt($("seekSlider").value, 10)];
+  if (s) $("playerSentence").textContent = s.original;
+});
+$("seekSlider").addEventListener("change", () => {
+  seekDragging = false;
+  if (state.book) state.player.play(parseInt($("seekSlider").value, 10));
+});
 
 // Panel Âm thanh (1.0.6): âm lượng / tông giọng / khoảng nghỉ
 $("audioBtn").addEventListener("click", () => $("audioPanel").classList.toggle("hidden"));
@@ -94,8 +109,13 @@ async function renderLibrary() {
     const pct = progressPct(pr);
     return `
     <div class="card">
-      <h4>${escapeHtml(b.title)}</h4>
-      <p class="muted">${escapeHtml(b.author || "")} ${b.format?.toUpperCase() || ""} · ${b.chapters || "?"} chương/phần</p>
+      <div class="book-head">
+        <span class="cover cover-letter" data-cover="${b.id}">${escapeHtml((b.title || "?").trim().charAt(0).toUpperCase())}</span>
+        <div class="grow">
+          <h4>${escapeHtml(b.title)}</h4>
+          <p class="muted">${escapeHtml(b.author || "")} ${b.format?.toUpperCase() || ""} · ${b.chapters || "?"} chương/phần</p>
+        </div>
+      </div>
       ${pr?.totalSentences ? `<progress value="${pct}" max="100" style="width:100%"></progress>
       <p class="muted tnum">Đã nghe ${pct === 0 && pr.sentenceIndex > 0 ? "<1" : pct}% · câu ${pr.sentenceIndex + 1}/${pr.totalSentences}${pr.chapterTitle ? ` · ${escapeHtml(pr.chapterTitle)}` : ""}</p>` : ""}
       <div class="row">
@@ -105,6 +125,16 @@ async function renderLibrary() {
       </div>
     </div>`;
   }).join("");
+  // Ảnh bìa (1.2.0): nạp bất đồng bộ, có bìa thì thay chữ cái đại diện
+  $("bookGrid").querySelectorAll("[data-cover]").forEach(async (el) => {
+    const blob = await store.getCover(el.dataset.cover).catch(() => null);
+    if (!blob) return;
+    const img = document.createElement("img");
+    img.className = "cover";
+    img.alt = "";
+    img.src = URL.createObjectURL(blob);
+    el.replaceWith(img);
+  });
   $("bookGrid").querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.open)));
   $("bookGrid").querySelectorAll("[data-continue]").forEach((el) => el.addEventListener("click", () => openBook(el.dataset.continue, true)));
   $("bookGrid").querySelectorAll("[data-del]").forEach((el) => el.addEventListener("click", async () => {
@@ -136,12 +166,15 @@ $("fileInput").addEventListener("change", async (e) => {
   $("importStatus").textContent = `Đang đọc file ${file.name}…`;
   try {
     const extracted = await extractBook(file, makeExtractOpts($("importStatus")));
+    const coverBlob = extracted.coverBlob || null;
+    delete extracted.coverBlob; // bìa lưu ở store riêng, không nhét vào cache trích
     const meta = {
       id: newId(), title: extracted.title, author: extracted.author,
       format: file.name.split(".").pop().toLowerCase(), chapters: extracted.chapters.length,
       scanned: extracted.scanned, addedAt: Date.now(),
     };
     await store.addBook(meta, file);
+    if (coverBlob) await store.putCover(meta.id, coverBlob).catch(() => {});
     // Lưu kèm bản đã trích để mở lại không phải trích lại từ đầu
     await store.setProgress(meta.id, { extractedCache: extracted, sentenceIndex: 0 });
     $("importStatus").textContent = extracted.ocr
@@ -153,6 +186,65 @@ $("fileInput").addEventListener("change", async (e) => {
   } catch (err) {
     $("importStatus").textContent = "Không đọc được file: " + err.message;
   }
+  e.target.value = "";
+});
+
+// ---------- Sao lưu / khôi phục (1.2.0) ----------
+$("backupBtn").addEventListener("click", async () => {
+  const st = $("importStatus");
+  st.textContent = "Đang tạo bản sao lưu…";
+  try {
+    const books = await store.listBooks();
+    const progressList = await store.listProgress();
+    const bookmarksByBook = {}, dictsByBook = {};
+    for (const b of books) {
+      bookmarksByBook[b.id] = await store.listBookmarks(b.id);
+      dictsByBook[b.id] = await store.getBookDict(b.id);
+    }
+    const backup = buildBackup({ books, progressList, bookmarksByBook, dictsByBook });
+    if (!backup.books.length) { st.textContent = "Chưa có sách nào đã trích để sao lưu."; return; }
+    const json = JSON.stringify(backup);
+    const name = `sachnoi-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const bridge = native();
+    if (bridge?.saveFile) {
+      await bridge.saveFile({ name, base64: await blobToBase64(new Blob([json], { type: "application/json" })) });
+      st.textContent = `Đã tạo sao lưu ${backup.books.length} cuốn${backup.skipped ? ` (bỏ qua ${backup.skipped} cuốn chưa từng mở)` : ""} — chọn nơi lưu trong hộp chia sẻ vừa mở.`;
+    } else {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = name;
+      a.click();
+      st.textContent = `Đã tải file sao lưu ${backup.books.length} cuốn.`;
+    }
+  } catch (err) { st.textContent = "Sao lưu lỗi: " + err.message; }
+});
+$("restoreInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const st = $("importStatus");
+  st.textContent = "Đang khôi phục…";
+  try {
+    const { books } = parseBackup(await file.text());
+    const existing = new Set((await store.listBooks()).map((b) => b.id));
+    let restored = 0;
+    for (const item of books) {
+      let id = item.meta.id;
+      if (existing.has(id)) id = newId(); // trùng sách đã có -> thêm như cuốn mới, không ghi đè
+      const meta = { ...item.meta, id };
+      await store.addBook(meta, null);
+      await store.setProgress(id, {
+        extractedCache: item.extracted, sentenceIndex: item.progress.sentenceIndex || 0,
+        totalSentences: item.progress.totalSentences || 0, chapterTitle: item.progress.chapterTitle || "",
+        lastListenedAt: item.progress.lastListenedAt || 0,
+      });
+      for (const bm of item.bookmarks) await store.putBookmark({ ...bm, id: `${id}:${bm.sentenceIndex}`, bookId: id });
+      if (Object.keys(item.dict).length) await store.setBookDict(id, item.dict);
+      existing.add(id);
+      restored++;
+    }
+    st.textContent = `Đã khôi phục ${restored} cuốn sách từ bản sao lưu.`;
+    renderLibrary();
+  } catch (err) { st.textContent = "Khôi phục lỗi: " + err.message; }
   e.target.value = "";
 });
 
@@ -174,6 +266,7 @@ async function openBook(id, autoplay = false) {
       if (!extracted) { alert("Không tìm thấy file sách trên máy."); return; }
     } else {
       extracted = await extractBook(new File([blob], meta.title + "." + meta.format), makeExtractOpts($("readerTitle")));
+      if (extracted.coverBlob) { await store.putCover(id, extracted.coverBlob).catch(() => {}); delete extracted.coverBlob; }
       if (cacheStale) startSentence = 0;
       await store.setProgress(id, { extractedCache: extracted, sentenceIndex: startSentence });
       if (extracted.chapters.length !== meta.chapters) {
@@ -188,7 +281,9 @@ async function openBook(id, autoplay = false) {
   $("readerTitle").textContent = extracted.title;
   $("scanWarn").classList.toggle("hidden", !extracted.scanned);
   $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
-  await state.player.load(meta, extracted, await store.getBookDict(id));
+  await state.player.load(meta, extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(id)));
+  $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
+  $("seekSlider").value = String(Math.max(0, startSentence));
   state.bookmarks = await store.listBookmarks(id);
   renderBookmarks();
   refreshBmBtn();
@@ -252,11 +347,20 @@ function showChapter(ci) {
       if (!word) { alert("Bôi đen từ cần sửa cách đọc rồi nhấn giữ lại."); return; }
       const reading = prompt(`Đọc từ “${word}” thành:`);
       if (!reading) return;
-      const dict = await store.getBookDict(state.book.id);
-      dict[word] = reading;
-      await store.setBookDict(state.book.id, dict);
-      await state.player.load(state.book, state.extracted, dict);
-      alert(`Đã nhớ: từ nay “${word}” đọc là “${reading}” trong sách này.`);
+      // 1.2.0: chọn phạm vi — mọi sách (từ điển chung) hay chỉ sách này
+      const allBooks = confirm(`Áp dụng cách đọc “${reading}” cho từ “${word}” ở:\nOK = MỌI sách\nHuỷ = chỉ sách này`);
+      if (allBooks) {
+        const g = loadGlobalDict();
+        g[word] = reading;
+        saveGlobalDict(g);
+      } else {
+        const dict = await store.getBookDict(state.book.id);
+        dict[word] = reading;
+        await store.setBookDict(state.book.id, dict);
+      }
+      await state.player.load(state.book, state.extracted, mergeDicts(loadGlobalDict(), await store.getBookDict(state.book.id)));
+      $("seekSlider").max = String(Math.max(0, state.player.sentences.length - 1));
+      alert(`Đã nhớ: từ nay “${word}” đọc là “${reading}” ${allBooks ? "trong mọi sách" : "trong sách này"}.`);
     });
   });
   highlightSentence(state.player.index);
@@ -367,6 +471,8 @@ const THEMES = [["dark", "Tối"], ["paper", "Giấy"], ["light", "Sáng"]];
 function applyReaderPrefs() {
   const rb = $("readerBody");
   rb.style.fontSize = `${readerPrefs.fontSize}px`;
+  const fv = $("fontSizeVal");
+  if (fv) fv.textContent = String(readerPrefs.fontSize);
   rb.dataset.theme = readerPrefs.theme;
   $("themeBtn").textContent = "Nền: " + (THEMES.find(([k]) => k === readerPrefs.theme)?.[1] || "Tối");
   try { localStorage.setItem("sachnoi.reader", JSON.stringify(readerPrefs)); } catch {}
@@ -431,14 +537,58 @@ async function renderVoices() {
     <div class="card">
       <h4>${escapeHtml(v.name)} ${v.pick ? '<span class="chip star">★ Đề xuất</span>' : ""}</h4>
       <p class="muted">${escapeHtml(v.region || "")} · ${escapeHtml(v.gender || "")} · ${escapeHtml(v.character || "")}</p>
+      <button class="btn small" data-preview="${escapeHtml(v.id)}">▶ Nghe thử</button>
       ${v.sample ? `<audio controls preload="none" src="${escapeHtml(v.sample)}" style="width:100%"></audio>` : ""}
     </div>`).join("");
+  $("voiceList").querySelectorAll("[data-preview]").forEach((el) => el.addEventListener("click", () => previewVoice(el)));
+}
+
+// Nghe thử giọng (1.2.0): tổng hợp 1 câu mẫu bằng chính giọng đó, phát ngay.
+const previewState = { audio: new Audio(), voiceId: null };
+async function previewVoice(btn) {
+  const voiceId = btn.dataset.preview;
+  if (previewState.voiceId === voiceId) { // bấm lại = dừng
+    previewState.audio.pause();
+    previewState.voiceId = null;
+    btn.textContent = "▶ Nghe thử";
+    return;
+  }
+  document.querySelectorAll("[data-preview]").forEach((b) => { b.textContent = "▶ Nghe thử"; });
+  previewState.voiceId = voiceId;
+  btn.textContent = "⏳ Đang tạo…";
+  const sample = "Xin chào, đây là giọng đọc mẫu. Hôm nay chúng ta cùng nghe một cuốn sách thật hay nhé.";
+  try {
+    const bridge = native();
+    if (bridge?.ttsSynthesize) {
+      const { base64 } = await bridge.ttsSynthesize({ text: sample, voice: voiceId });
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      previewState.audio.src = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      await previewState.audio.play();
+      btn.textContent = "⏹ Dừng";
+      previewState.audio.onended = () => { if (previewState.voiceId === voiceId) { previewState.voiceId = null; btn.textContent = "▶ Nghe thử"; } };
+    } else if ("speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(sample);
+      u.lang = "vi-VN";
+      const v = window.speechSynthesis.getVoices().find((x) => x.lang?.startsWith("vi"));
+      if (v) u.voice = v;
+      u.onend = () => { previewState.voiceId = null; btn.textContent = "▶ Nghe thử"; };
+      window.speechSynthesis.speak(u);
+      btn.textContent = "⏹ Dừng";
+    } else {
+      btn.textContent = "▶ Nghe thử";
+      previewState.voiceId = null;
+    }
+  } catch (err) {
+    previewState.voiceId = null;
+    btn.textContent = "▶ Nghe thử";
+    alert("Nghe thử lỗi: " + err.message);
+  }
 }
 
 // ---------- Kiểm tra đọc / chẩn đoán ----------
 $("labRun").addEventListener("click", () => {
   const input = $("labInput").value;
-  const { sentences, chunks } = prepareForSpeech(input);
+  const { sentences, chunks } = prepareForSpeech(input, { bookDict: loadGlobalDict() });
   $("labOutput").textContent =
     "Câu sau chuẩn hoá:\n" + sentences.map((s) => "• " + s.spoken).join("\n") +
     "\n\nĐoạn tổng hợp gửi vào máy đọc:\n" + chunks.map((c, i) => `${i + 1}. ${c}`).join("\n");

@@ -23,9 +23,15 @@
   <section id="view-library" class="view active">
     <div class="row between">
       <h2>Thư viện trên máy</h2>
-      <label class="btn primary file-btn">+ Thêm sách
-        <input id="fileInput" type="file" accept=".epub,.pdf,.txt,.md" hidden>
-      </label>
+      <span class="row">
+        <button id="backupBtn" class="btn">Sao lưu</button>
+        <label class="btn file-btn">Khôi phục
+          <input id="restoreInput" type="file" accept=".json,application/json" hidden>
+        </label>
+        <label class="btn primary file-btn">+ Thêm sách
+          <input id="fileInput" type="file" accept=".epub,.pdf,.txt,.md" hidden>
+        </label>
+      </span>
     </div>
     <p id="importStatus" class="muted"></p>
     <div id="bookGrid" class="grid"></div>
@@ -44,10 +50,6 @@
       <button id="bmBtn" class="btn small">Đánh dấu câu này</button>
       <button id="bmListBtn" class="btn small">Dấu trang (<span id="bmCount">0</span>)</button>
       <button id="searchBtn" class="btn small">Tìm trong sách</button>
-      <span class="grow"></span>
-      <button id="fontMinus" class="btn small">A−</button>
-      <button id="fontPlus" class="btn small">A+</button>
-      <button id="themeBtn" class="btn small">Nền: Tối</button>
     </div>
     <div id="bmPanel" class="tool-panel hidden"></div>
     <div id="searchPanel" class="tool-panel hidden">
@@ -73,7 +75,7 @@
       <h2>Gói giọng & bộ đọc</h2>
       <span id="manifestSource" class="chip"></span>
     </div>
-    <p class="muted">App cài mới không kèm giọng nào. Tải gói nào dùng gói đó, mọi thứ chạy ngay trên máy, không cần mạng khi nghe. Trong app iOS, việc tải tiếp tục ngay cả khi khoá máy.</p>
+    <p class="muted">Gói Core tốt nhất đã gắn sẵn trong app — mở app là nghe ngay, không cần tải. Các gói khác tải thêm khi cần; mọi thứ chạy ngay trên máy, không cần mạng khi nghe, tải vẫn tiếp tục khi khoá máy.</p>
     <div id="packList"></div>
     <h3>Giọng VieNeu (cần tải gói Core trước)</h3>
     <div id="voiceList" class="grid"></div>
@@ -111,9 +113,18 @@
       <option value="off">Không hẹn giờ</option><option value="chapter">Hết chương</option>
       <option value="15">15 phút</option><option value="30">30 phút</option><option value="60">60 phút</option>
     </select>
-    <button id="audioBtn" class="btn small" title="Âm lượng, tông giọng, khoảng nghỉ">Âm thanh</button>
+    <button id="audioBtn" class="btn small" title="Cỡ chữ, nền đọc, âm lượng, tông giọng, khoảng nghỉ">Tuỳ chỉnh</button>
   </div>
+  <input id="seekSlider" type="range" min="0" max="0" step="1" value="0" class="seek" title="Kéo để nhảy tới câu">
   <div id="audioPanel" class="audio-panel hidden">
+    <div class="row wrap" style="align-items:center;gap:8px">
+      <span class="muted">Cỡ chữ</span>
+      <button id="fontMinus" class="btn small">A−</button>
+      <span id="fontSizeVal" class="tnum">18</span>
+      <button id="fontPlus" class="btn small">A+</button>
+      <span class="grow"></span>
+      <button id="themeBtn" class="btn small">Nền: Tối</button>
+    </div>
     <label>Âm lượng <input id="setVolume" type="range" min="0" max="100" step="1"><span id="setVolumeVal"></span></label>
     <label>Tông giọng <input id="setPitch" type="range" min="-6" max="6" step="0.5"><span id="setPitchVal"></span></label>
     <label>Nghỉ sau câu <input id="setGapSentence" type="range" min="0" max="2" step="0.05"><span id="setGapSentenceVal"></span></label>

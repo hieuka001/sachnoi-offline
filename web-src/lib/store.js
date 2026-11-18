@@ -2,7 +2,7 @@
 // Không server, không tài khoản. Xoá app là mất dữ liệu (đúng bản chất offline).
 
 const DB_NAME = "sachnoi-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -16,6 +16,7 @@ function openDb() {
       if (!has("bookDict")) db.createObjectStore("bookDict", { keyPath: "bookId" });
       if (!has("packs")) db.createObjectStore("packs", { keyPath: "id" }); // chỉ dùng ở bản trình duyệt (dev)
       if (!has("bookmarks")) db.createObjectStore("bookmarks", { keyPath: "id" }); // v2: đánh dấu câu
+      if (!has("covers")) db.createObjectStore("covers", { keyPath: "id" }); // v3: ảnh bìa sách (1.2.0)
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -54,9 +55,16 @@ export const store = {
     const row = await tx("blobs", "readonly", (s) => s.get(id));
     return row?.blob ?? null;
   },
+  async putCover(id, blob) { await tx("covers", "readwrite", (s) => s.put({ id, blob })); },
+  async getCover(id) {
+    const row = await tx("covers", "readonly", (s) => s.get(id));
+    return row?.blob ?? null;
+  },
   async deleteBook(id) {
     await tx("books", "readwrite", (s) => s.delete(id));
     await tx("blobs", "readwrite", (s) => s.delete(id));
+    await tx("covers", "readwrite", (s) => s.delete(id));
+    await tx("bookDict", "readwrite", (s) => s.delete(id));
     await tx("progress", "readwrite", (s) => s.delete(id));
     const bms = await this.listBookmarks(id);
     for (const bm of bms) await tx("bookmarks", "readwrite", (s) => s.delete(bm.id));
