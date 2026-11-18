@@ -47,14 +47,22 @@ export class Player {
   }
 
   static loadAudioSettings() {
-    const defaults = { volume: 100, pitch: 0, gapSentence: 0.25, gapComma: 0, gapParagraph: 0.8 };
-    try { return { ...defaults, ...JSON.parse(localStorage.getItem("sachnoi.audioSettings") || "{}") }; }
-    catch { return defaults; }
+    // 1.9.4: MỘT cài đặt nghỉ chung cho mọi dấu câu (gapPunct) theo yêu cầu
+    // của người dùng — trước đây tách "sau câu" và "sau phẩy". Cài đặt cũ
+    // đã lưu: lấy gapSentence cũ làm gapPunct nếu chưa có.
+    const defaults = { volume: 100, pitch: 0, gapPunct: 0.25, gapParagraph: 0.8 };
+    try {
+      const stored = JSON.parse(localStorage.getItem("sachnoi.audioSettings") || "{}");
+      const merged = { ...defaults, ...stored };
+      if (stored.gapPunct === undefined && typeof stored.gapSentence === "number") merged.gapPunct = stored.gapSentence;
+      delete merged.gapSentence; delete merged.gapComma;
+      return merged;
+    } catch { return defaults; }
   }
 
   _nativeAudio() {
     const s = this.audioSettings;
-    return { volume: s.volume / 100, pitch: s.pitch * 100, gapSentence: s.gapSentence, gapComma: s.gapComma, gapParagraph: s.gapParagraph };
+    return { volume: s.volume / 100, pitch: s.pitch * 100, gapPunct: s.gapPunct, gapParagraph: s.gapParagraph };
   }
 
   setAudioSettings(patch) {

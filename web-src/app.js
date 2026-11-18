@@ -193,8 +193,7 @@ const audioPanelSyncs = [];
   };
   bind("setVolume", "setVolumeVal", "volume", (v) => `${v}%`);
   bind("setPitch", "setPitchVal", "pitch", (v) => (v > 0 ? `+${v}` : `${v}`));
-  bind("setGapSentence", "setGapSentenceVal", "gapSentence", (v) => `${v.toFixed(2)}s`);
-  bind("setGapComma", "setGapCommaVal", "gapComma", (v) => `${v.toFixed(2)}s`);
+  bind("setGapPunct", "setGapPunctVal", "gapPunct", (v) => `${v.toFixed(2)}s`);
   bind("setGapPara", "setGapParaVal", "gapParagraph", (v) => `${v.toFixed(1)}s`);
 })();
 
@@ -657,7 +656,7 @@ applyReaderPrefs();
 
 // Đặt lại mặc định (1.9.0): âm thanh + cỡ chữ + nền đọc về giá trị gốc
 $("resetSettingsBtn").addEventListener("click", () => {
-  state.player.setAudioSettings({ volume: 100, pitch: 0, gapSentence: 0.25, gapComma: 0, gapParagraph: 0.8 });
+  state.player.setAudioSettings({ volume: 100, pitch: 0, gapPunct: 0.25, gapParagraph: 0.8 });
   audioPanelSyncs.forEach((f) => f());
   readerPrefs.fontSize = 18;
   readerPrefs.theme = "dark";

@@ -39,6 +39,25 @@ test("P0-B: prefetch chạy ở QoS .default, không còn .utility", () => {
   assert.ok(!body.includes("qos: .utility"), "prefetch vẫn còn QoS .utility");
 });
 
+test("1.9.4: NativePlayer không còn chẻ mệnh đề / tách nghỉ câu-phẩy khi tổng hợp", () => {
+  assert.ok(!swift.includes("Self.splitClauses"), "vẫn còn gọi splitClauses — 1.9.4 phải tổng hợp cả đoạn 1 lần gọi");
+  assert.ok(!swift.includes("settings.gapComma"), "vẫn còn dùng settings.gapComma trong NativePlayer");
+  assert.ok(!swift.includes("settings.gapSentence"), "vẫn còn dùng settings.gapSentence trong NativePlayer");
+  assert.ok(swift.includes("gapPunct"), "thiếu gapPunct trong NativePlayer");
+  assert.ok(swift.includes("synthesizeSync(text: item.text"), "startCurrent phải tổng hợp cả đoạn");
+  assert.ok(swift.includes("makeBufferInMemory"), "thiếu giải mã WAV trong bộ nhớ");
+});
+
+test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", () => {
+  const playerJs = readFileSync(join(root, "web-src/lib/player.js"), "utf8");
+  const plugin = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/SachNoiBridgePlugin.swift"), "utf8");
+  assert.ok(playerJs.includes("gapPunct"), "player.js thiếu gapPunct");
+  assert.ok(html.includes('id="setGapPunct"'), "sheet thiếu slider Nghỉ tại dấu câu");
+  assert.ok(!html.includes('id="setGapSentence"'), "sheet vẫn còn slider Nghỉ sau câu riêng");
+  assert.ok(!html.includes('id="setGapComma"'), "sheet vẫn còn slider Nghỉ sau phẩy riêng");
+  assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
+});
+
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
   assert.ok(html.includes("<h3>Giọng VieNeu</h3>"), "tiêu đề Giọng VieNeu phải còn");

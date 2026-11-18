@@ -117,7 +117,10 @@ final class VieNeuEngine {
 
     // MARK: - Tổng hợp 1 đoạn văn (API cho TtsServer)
 
-    func synthesize(text: String, voiceName: String?) throws -> Data {
+    /// punctPause/paraPause (1.9.4): khoảng lặng tại dấu câu do người dùng đặt
+    /// — MỘT giá trị chung cho mọi dấu câu (sentence + minor), paraPause cho
+    /// ranh giới đoạn. nil = giữ mặc định gốc của engine (0.5/0.3/0.7).
+    func synthesize(text: String, voiceName: String?, punctPause: Double? = nil, paraPause: Double? = nil) throws -> Data {
         let preset = voices.resolve(voiceName)
         let (chunks, gaps) = phonemizer.chunksWithGaps(text)
         if chunks.isEmpty { return Self.wavData([]) }
@@ -129,8 +132,10 @@ final class VieNeuEngine {
                                    refCodes: preset.codes, maxNewFrames: cap)
             wavs.append(wav)
         }
-        let joined = SpeechUtils.joinAudioChunks(wavs, Self.sampleRate,
-                                                 silencePs: SpeechUtils.gapsToSilence(gaps))
+        let silencePs = punctPause != nil
+            ? SpeechUtils.gapsToSilence(gaps, punct: punctPause!, para: paraPause ?? 0.7)
+            : SpeechUtils.gapsToSilence(gaps)
+        let joined = SpeechUtils.joinAudioChunks(wavs, Self.sampleRate, silencePs: silencePs)
         return Self.wavData(joined)
     }
 

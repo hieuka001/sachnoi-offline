@@ -3,20 +3,23 @@
 // Lỗi nghiêm trọng người dùng báo 2026-11-18: sách văn xuôi (Đạo Đức Kinh chú
 // giải) có câu dài 250–350 ký tự; bộ phát native tổng hợp TOÀN BỘ câu xong mới
 // phát nên mỗi câu dài là một khoảng im lặng chờ rất lâu ("quét 1 đoạn dài mới
-// đọc"). Sửa cấu trúc: chẻ mỗi câu thành đoạn ≤ ~110 ký tự tại ranh giới mệnh
-// đề (dấu phẩy/chấm phẩy/hai chấm), đoạn vẫn quá dài thì cắt tại khoảng trắng.
-// Bộ phát chỉ phải tổng hợp 1 đoạn ngắn là phát ngay, các đoạn sau được
-// prefetch trong lúc phát. Highlight/tiến độ/dấu trang vẫn tính theo CÂU —
-// file này giữ ánh xạ đoạn -> câu.
+// đọc"). Sửa cấu trúc: chẻ mỗi câu thành đoạn ngắn tại ranh giới mệnh đề
+// (dấu phẩy/chấm phẩy/hai chấm), đoạn vẫn quá dài thì cắt tại khoảng trắng.
+// Bộ phát chỉ phải tổng hợp 1 đoạn là phát ngay, các đoạn sau được prefetch
+// trong lúc phát. Highlight/tiến độ/dấu trang vẫn tính theo CÂU — file này
+// giữ ánh xạ đoạn -> câu.
+//
+// 1.9.4: đoạn nới từ 110 lên 180 ký tự — mỗi lần gọi engine tốn một lượt
+// prefill cố định, đoạn dài hơn thì chi phí đó chia cho nhiều âm thanh hơn,
+// tổng hợp theo kịp phát tốt hơn (máy thật 1.9.3 vẫn ngắt quãng từng đoạn).
 //
 // Cờ trên mỗi item gửi xuống native:
 //   t: văn bản đoạn (đã chuẩn hoá để đọc)
 //   c: tên chương
 //   p: đoạn cuối của đoạn văn (nghỉ dài khi hết đoạn)
-//   k: còn đoạn tiếp của CÙNG câu theo sau -> native dùng khoảng nghỉ dấu phẩy
-//      (mặc định 0 = phát liền) thay cho khoảng nghỉ hết câu.
+//   k: còn đoạn tiếp của CÙNG câu theo sau (ranh giới tại dấu câu giữa câu)
 
-export const PLAYBACK_MAX_CHARS = 110;
+export const PLAYBACK_MAX_CHARS = 180;
 
 export function chunkText(text, max = PLAYBACK_MAX_CHARS) {
   const t = String(text || "").trim();

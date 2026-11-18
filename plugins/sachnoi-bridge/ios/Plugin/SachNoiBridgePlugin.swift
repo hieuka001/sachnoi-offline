@@ -282,15 +282,22 @@ public class SachNoiBridgePlugin: CAPPlugin {
         var s = NativePlayer.AudioSettings()
         if let v = (d["volume"] as? NSNumber)?.floatValue { s.volume = min(max(0, v), 1) }
         if let v = (d["pitch"] as? NSNumber)?.floatValue { s.pitchCents = min(max(-1200, v), 1200) }
-        if let v = (d["gapSentence"] as? NSNumber)?.doubleValue { s.gapSentence = min(max(0, v), 3) }
-        if let v = (d["gapComma"] as? NSNumber)?.doubleValue { s.gapComma = min(max(0, v), 2) }
+        // 1.9.4: gapPunct là cài đặt nghỉ chung cho mọi dấu câu; vẫn nhận
+        // gapSentence/gapComma cũ làm dự phòng để bản web cũ hơn vẫn chạy.
+        if let v = (d["gapPunct"] as? NSNumber)?.doubleValue { s.gapPunct = min(max(0, v), 3) }
+        else if let v = (d["gapSentence"] as? NSNumber)?.doubleValue { s.gapPunct = min(max(0, v), 3) }
+        else if let v = (d["gapComma"] as? NSNumber)?.doubleValue { s.gapPunct = min(max(0, v), 3) }
         if let v = (d["gapParagraph"] as? NSNumber)?.doubleValue { s.gapParagraph = min(max(0, v), 5) }
+        // Cùng giá trị áp cho khoảng lặng TẠI dấu câu bên trong engine (đường
+        // nghe thử/HTTP tổng hợp cả câu/đoạn dài) — một cài đặt chi phối tất cả.
+        TtsServer.shared.punctPauseSeconds = s.gapPunct
+        TtsServer.shared.paraPauseSeconds = s.gapParagraph
         return s
     }
 
     @objc func ttsSetAudio(_ call: CAPPluginCall) {
         var d: [String: Any] = [:]
-        for k in ["volume", "pitch", "gapSentence", "gapComma", "gapParagraph"] {
+        for k in ["volume", "pitch", "gapPunct", "gapSentence", "gapComma", "gapParagraph"] {
             if let v = call.getDouble(k) { d[k] = v }
         }
         player.setAudio(Self.audioSettings(from: d))

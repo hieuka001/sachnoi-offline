@@ -27,7 +27,9 @@ test("chunkText: không cắt ở dấu phẩy thập phân (1,5kg)", () => {
 });
 
 test("chunkText: mệnh đề không dấu phẩy dài vẫn bị cắt tại khoảng trắng", () => {
-  const s = "một câu rất dài không hề có dấu câu nào ở giữa cả mà cứ thế kéo dài mãi cho tới khi vượt quá giới hạn cho phép của một đoạn phát thì phải cắt ra tại khoảng trắng gần nhất";
+  // 1.9.4: giới hạn đoạn nới lên 180 ký tự nên câu mẫu phải dài hơn nữa
+  // mới buộc phải cắt tại khoảng trắng.
+  const s = "một câu rất dài không hề có dấu câu nào ở giữa cả mà cứ thế kéo dài mãi cho tới khi vượt quá giới hạn cho phép của một đoạn phát thì phải cắt ra tại khoảng trắng gần nhất rồi phần còn lại vẫn tiếp tục kéo dài thêm nữa để chắc chắn vượt xa giới hạn mới";
   const chunks = chunkText(s);
   assert.ok(chunks.length >= 2);
   for (const c of chunks) assert.ok(c.length <= PLAYBACK_MAX_CHARS + 30);

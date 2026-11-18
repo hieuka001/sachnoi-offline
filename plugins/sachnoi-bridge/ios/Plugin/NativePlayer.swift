@@ -20,8 +20,9 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     public struct AudioSettings {
         var volume: Float = 1.0        // 0..1
         var pitchCents: Float = 0      // -1200..1200 (100 cent = 1 bán âm)
-        var gapSentence: Double = 0.25 // nghỉ sau dấu chấm/hết câu (giây)
-        var gapComma: Double = 0       // nghỉ sau dấu phẩy (0 = đọc liền như cũ)
+        // 1.9.4: MỘT khoảng nghỉ chung cho mọi dấu câu (.,;!:"()?...) theo yêu
+        // cầu của người dùng — trước đây tách nghỉ sau câu / sau phẩy.
+        var gapPunct: Double = 0.25    // nghỉ tại mọi ranh giới dấu câu (giây)
         var gapParagraph: Double = 0.8 // nghỉ khi xuống đoạn
     }
 
@@ -230,25 +231,6 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    // MARK: - Tách mệnh đề theo dấu phẩy/chấm phẩy (cho khoảng nghỉ giữa câu)
-    static func splitClauses(_ text: String) -> [String] {
-        var clauses: [String] = []
-        var cur = ""
-        let chars = Array(text)
-        for i in chars.indices {
-            let ch = chars[i]
-            cur.append(ch)
-            if (ch == "," || ch == ";" || ch == ":") && i + 1 < chars.count && chars[i + 1] == " " {
-                let c = cur.trimmingCharacters(in: .whitespaces)
-                if !c.isEmpty { clauses.append(c) }
-                cur = ""
-            }
-        }
-        let tail = cur.trimmingCharacters(in: .whitespaces)
-        if !tail.isEmpty { clauses.append(tail) }
-        return clauses.isEmpty ? [text] : clauses
-    }
-
     // MARK: - Phát câu hiện tại
     private func startCurrent() {
         guard index >= 0, index < items.count else { finishBook(); return }
@@ -264,18 +246,22 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         DispatchQueue.main.async { BackgroundAudio.shared.beginBackgroundAssertion(name: "SachNoiSynthesize") }
         queue.async { [weak self] in
             guard let self else { return }
-            let split = self.settings.gapComma >= 0.05
-            let clauses = split ? Self.splitClauses(item.text) : [item.text]
+            // 1.9.4: tổng hợp CẢ đoạn trong MỘT lần gọi engine. Trước đây khi
+            // gapComma >= 0.05 đoạn bị chẻ theo dấu phẩy thành nhiều lần gọi —
+            // mỗi lần gọi tốn một lượt prefill đầy đủ của engine nên tổng hợp
+            // chậm hơn hẳn và không theo kịp tốc độ phát (máy thật 1.9.3: cứ
+            // hết 1 đoạn lại ngưng lâu chờ tổng hợp). Dấu câu bên trong đoạn
+            // do engine tự xử lý khi phiên âm; khoảng nghỉ tại ranh giới đoạn
+            // dùng chung gapPunct.
+            let key = "\(idx)"
             var datas: [Data] = []
             var ok = true
-            for (c, clause) in clauses.enumerated() {
-                let key = "\(idx)#\(c)"
-                if let d = self.cache[key] { datas.append(d); continue }
-                if let d = try? TtsServer.shared.synthesizeSync(text: clause, voice: self.voice) {
-                    self.cache[key] = d
-                    datas.append(d)
-                } else { ok = false; break }
-            }
+            if let d = self.cache[key] {
+                datas = [d]
+            } else if let d = try? TtsServer.shared.synthesizeSync(text: item.text, voice: self.voice) {
+                self.cache[key] = d
+                datas = [d]
+            } else { ok = false }
             DispatchQueue.main.async { BackgroundAudio.shared.endBackgroundAssertion() }
             guard gen == self.generation, self.playing, self.index == idx else { return }
             guard ok, !datas.isEmpty else {
@@ -300,20 +286,18 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
 
     private func prefetch(next nextIdx: Int) {
         guard nextIdx < items.count else { return }
-        let split = settings.gapComma >= 0.05
-        let clauses = split ? Self.splitClauses(items[nextIdx].text) : [items[nextIdx].text]
         let v = voice
+        let text = items[nextIdx].text
         // 1.9.3 (P0-B): prefetch chạy ở QoS .default thay vì .utility để
         // tổng hợp đoạn kế không bị hệ thống dìm xuống khi máy bận.
+        // 1.9.4: một lần gọi engine cho cả đoạn, khoá cache là chỉ số đoạn.
         DispatchQueue.global(qos: .default).async { [weak self] in
-            for (c, clause) in clauses.enumerated() {
-                let key = "\(nextIdx)#\(c)"
-                var exists = false
-                self?.queue.sync { exists = self?.cache[key] != nil }
-                if exists { continue }
-                if let d = try? TtsServer.shared.synthesizeSync(text: clause, voice: v) {
-                    self?.queue.async { if self?.cache[key] == nil { self?.cache[key] = d } }
-                }
+            let key = "\(nextIdx)"
+            var exists = false
+            self?.queue.sync { exists = self?.cache[key] != nil }
+            if exists { return }
+            if let d = try? TtsServer.shared.synthesizeSync(text: text, voice: v) {
+                self?.queue.async { if self?.cache[key] == nil { self?.cache[key] = d } }
             }
         }
     }
@@ -356,6 +340,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func makeBuffer(from data: Data) -> AVAudioPCMBuffer? {
+        if let b = makeBufferInMemory(from: data) { return b }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("sachnoi-\(UUID().uuidString).wav")
         do {
             try data.write(to: url)
@@ -370,6 +355,46 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         } catch { return nil }
     }
 
+    /// 1.9.4: WAV do chính VieNeuEngine.wavData viết (RIFF, PCM16, mono) —
+    /// giải mã thẳng trong bộ nhớ thay vì ghi file tạm rồi đọc lại bằng
+    /// AVAudioFile ở mỗi đoạn (đỡ một vòng đĩa ngay tại ranh giới phát).
+    /// Parse không khớp thì trả nil, nơi gọi tự rơi về đường file cũ.
+    private func makeBufferInMemory(from data: Data) -> AVAudioPCMBuffer? {
+        guard data.count > 44,
+              data[0] == 0x52, data[1] == 0x49, data[2] == 0x46, data[3] == 0x46,
+              data[8] == 0x57, data[9] == 0x41, data[10] == 0x56, data[11] == 0x45
+        else { return nil }
+        func u32(_ off: Int) -> Int { Int(data[off]) | Int(data[off + 1]) << 8 | Int(data[off + 2]) << 16 | Int(data[off + 3]) << 24 }
+        func u16(_ off: Int) -> Int { Int(data[off]) | Int(data[off + 1]) << 8 }
+        var off = 12
+        var dataOff = -1
+        var dataLen = 0
+        while off + 8 <= data.count {
+            let id = String(bytes: data[off..<(off + 4)], encoding: .ascii) ?? ""
+            let len = u32(off + 4)
+            if id == "data" { dataOff = off + 8; dataLen = len; break }
+            off += 8 + len
+        }
+        guard dataOff > 0 else { return nil }
+        let channels = u16(22)
+        let sampleRate = u32(24)
+        let bits = u16(34)
+        guard channels == 1, bits == 16, sampleRate > 0 else { return nil }
+        let frames = min(dataLen / 2, (data.count - dataOff) / 2)
+        guard frames > 0,
+              let format = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
+        else { return nil }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        guard let dst = buffer.floatChannelData?[0] else { return nil }
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress else { return }
+            let src = base.advanced(by: dataOff).assumingMemoryBound(to: Int16.self)
+            for i in 0..<frames { dst[i] = Float(src[i]) / 32768.0 }
+        }
+        return buffer
+    }
+
     private func silenceBuffer(format: AVAudioFormat, seconds: Double) -> AVAudioPCMBuffer? {
         let frames = AVAudioFrameCount(format.sampleRate * max(0.01, seconds))
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
@@ -377,8 +402,8 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         return buffer
     }
 
-    /// Xếp lịch: [mệnh đề, nghỉ phẩy, mệnh đề, ..., nghỉ cuối câu/đoạn].
-    /// Hoàn thành phát của buffer CUỐI mới chuyển câu. Trả false nếu engine lỗi.
+    /// Xếp lịch: [buffer đoạn, nghỉ cuối đoạn]. Hoàn thành phát của buffer
+    /// CUỐI mới chuyển câu. Trả false nếu engine lỗi.
     private func scheduleOnEngine(datas: [Data], item: Item, gen: Int, idx: Int) -> Bool {
         var buffers: [AVAudioPCMBuffer] = []
         for d in datas {
@@ -386,12 +411,11 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             buffers.append(b)
         }
         guard let format = buffers.first?.format, ensureEngine(format: format) else { return false }
-        var plan: [AVAudioPCMBuffer] = []
-        for (i, b) in buffers.enumerated() {
-            if i > 0, settings.gapComma >= 0.05, let s = silenceBuffer(format: format, seconds: settings.gapComma) { plan.append(s) }
-            plan.append(b)
-        }
-        let endGap = item.paraEnd ? settings.gapParagraph : (item.cont ? settings.gapComma : settings.gapSentence)
+        // 1.9.4: mỗi đoạn là 1 buffer duy nhất (không còn chẻ mệnh đề); khoảng
+        // nghỉ cuối đoạn: xuống đoạn dùng gapParagraph, mọi ranh giới dấu câu
+        // còn lại dùng chung gapPunct.
+        var plan: [AVAudioPCMBuffer] = buffers
+        let endGap = item.paraEnd ? settings.gapParagraph : settings.gapPunct
         if endGap >= 0.02, let s = silenceBuffer(format: format, seconds: endGap) { plan.append(s) }
         guard !plan.isEmpty else { return false }
         engineBusy = true
@@ -423,9 +447,9 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     private func playFallbackClause(item: Item, gen: Int, idx: Int) {
         guard fallbackClause < fallbackDatas.count,
               let player = try? AVAudioPlayer(data: fallbackDatas[fallbackClause]) else {
-            // Hết mệnh đề: chờ khoảng nghỉ cuối câu rồi chuyển (đường này không
-            // chèn được buffer im lặng nên dùng hẹn giờ trên hàng đợi phát)
-            let gap = item.paraEnd ? settings.gapParagraph : (item.cont ? settings.gapComma : settings.gapSentence)
+            // Hết đoạn: chờ khoảng nghỉ rồi chuyển (đường này không chèn được
+            // buffer im lặng nên dùng hẹn giờ trên hàng đợi phát)
+            let gap = item.paraEnd ? settings.gapParagraph : settings.gapPunct
             queue.asyncAfter(deadline: .now() + max(0, gap)) { [weak self] in
                 guard let self, gen == self.generation, self.playing, self.index == idx else { return }
                 self.advance()
@@ -450,10 +474,10 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             guard self.playing else { return }
             self.fallbackClause += 1
             if self.fallbackClause < self.fallbackDatas.count {
-                // Nghỉ giữa các mệnh đề (sau dấu phẩy) ở đường dự phòng
+                // Nghỉ giữa các phần ở đường dự phòng (1.9.4: dùng gapPunct chung)
                 let gen = self.fallbackGen, idx = self.index
                 let item = self.items[idx]
-                self.queue.asyncAfter(deadline: .now() + max(0, self.settings.gapComma)) { [weak self] in
+                self.queue.asyncAfter(deadline: .now() + max(0, self.settings.gapPunct)) { [weak self] in
                     guard let self, gen == self.generation, self.playing, self.index == idx else { return }
                     self.playFallbackClause(item: item, gen: gen, idx: idx)
                 }

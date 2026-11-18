@@ -71,6 +71,12 @@ enum SpeechUtils {
         gaps.map { gapSilence[$0] ?? gapSilence["sentence"]! }
     }
 
+    /// 1.9.4: khoảng lặng tại dấu câu do NGƯỜI DÙNG đặt (một giá trị chung):
+    /// "sentence" và "minor" đều dùng punct; "para" dùng para.
+    static func gapsToSilence(_ gaps: [String], punct: Double, para: Double) -> [Double] {
+        gaps.map { $0 == "para" ? para : punct }
+    }
+
     // MARK: - Ghép chunk
 
     static func edgeSilence(_ wav: [Float], _ sr: Int, threshDb: Double = -45.0, winS: Double = 0.01) -> (Int, Int) {

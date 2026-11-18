@@ -65,7 +65,7 @@ test("Player.load chạy hết đường: có câu + đoạn phát + ánh xạ �
   assert.equal(p.itemSentence.length, p.playItems.length);
   assert.equal(p.sentenceFirstItem[0], 0);
   assert.equal(p.itemSentence[p.sentenceFirstItem[1]], 1);
-  for (const it of p.playItems) assert.ok(it.t && it.t.length <= 140, `đoạn quá dài: ${it.t.length}`);
+  for (const it of p.playItems) assert.ok(it.t && it.t.length <= 210, `đoạn quá dài: ${it.t.length}`);
 });
 
 test("Player giữ giọng đã chọn qua localStorage (1.9.0)", async () => {

@@ -13,6 +13,17 @@ final class TtsServer {
     private var listener: NWListener?
     private let synthQueue = DispatchQueue(label: "app.sachnoi.tts", qos: .userInitiated)
 
+    /// 1.9.4: khoảng lặng tại dấu câu do người dùng đặt (plugin ghi vào mỗi
+    /// khi áp cài đặt âm thanh). Mặc định khớp hành vi gốc của engine.
+    var punctPauseSeconds: Double = 0.3
+    var paraPauseSeconds: Double = 0.7
+
+    // 1.9.4: thống kê thời gian tổng hợp để chẩn đoán tốc độ thật trên máy
+    // (tab Chẩn đoán): lần gần nhất + trung bình, kèm số ký tự của lần đó.
+    private var synthLastMs = 0
+    private var synthLastChars = 0
+    private var synthAvgMs = 0
+
     private enum EngineState {
         case notStarted, loading, ready, failed(String)
     }
@@ -140,6 +151,7 @@ final class TtsServer {
         let ls = listenerState
         let ee = lastEngineError ?? ""
         let steps = initStepsText
+        let sLast = synthLastMs, sChars = synthLastChars, sAvg = synthAvgMs
         stateLock.unlock()
         var engineText = "notStarted"
         switch engineStateSnapshot() {
@@ -167,6 +179,9 @@ final class TtsServer {
             "initSteps": steps,
             "assetsFound": assetsFound,
             "assetsMissing": missing,
+            "synthLastMs": sLast,
+            "synthLastChars": sChars,
+            "synthAvgMs": sAvg,
         ]
     }
 
@@ -309,7 +324,16 @@ final class TtsServer {
     func synthesizeNow(text: String, voice: String) throws -> Data {
         let engine = try getEngine()
         let preset = engine.voices.resolve(voice.isEmpty ? nil : voice)
-        return try engine.synthesize(text: text, voiceName: preset.name)
+        let t0 = Date()
+        let data = try engine.synthesize(text: text, voiceName: preset.name,
+                                         punctPause: punctPauseSeconds, paraPause: paraPauseSeconds)
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        stateLock.lock()
+        synthLastMs = ms
+        synthLastChars = text.count
+        synthAvgMs = synthAvgMs == 0 ? ms : (synthAvgMs * 3 + ms) / 4
+        stateLock.unlock()
+        return data
     }
 
 
