@@ -40,6 +40,23 @@
     </div>
     <h2 id="readerTitle"></h2>
     <p id="scanWarn" class="warn hidden">Sách này có vẻ là bản scan (ít chữ trích được) — độ chính xác khi đọc phụ thuộc chất lượng OCR, hiện app đọc phần chữ trích được.</p>
+    <div class="row wrap" style="margin:8px 0">
+      <button id="bmBtn" class="btn small">Đánh dấu câu này</button>
+      <button id="bmListBtn" class="btn small">Dấu trang (<span id="bmCount">0</span>)</button>
+      <button id="searchBtn" class="btn small">Tìm trong sách</button>
+      <span class="grow"></span>
+      <button id="fontMinus" class="btn small">A−</button>
+      <button id="fontPlus" class="btn small">A+</button>
+      <button id="themeBtn" class="btn small">Nền: Tối</button>
+    </div>
+    <div id="bmPanel" class="tool-panel hidden"></div>
+    <div id="searchPanel" class="tool-panel hidden">
+      <div class="row">
+        <input id="searchInput" class="input grow" placeholder="Nhập từ cần tìm (gõ không dấu cũng được)…">
+        <button id="searchGo" class="btn small">Tìm</button>
+      </div>
+      <div id="searchResults"></div>
+    </div>
     <div id="readerBody" class="reader"></div>
   </section>
 

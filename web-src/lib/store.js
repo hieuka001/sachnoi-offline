@@ -2,18 +2,20 @@
 // Không server, không tài khoản. Xoá app là mất dữ liệu (đúng bản chất offline).
 
 const DB_NAME = "sachnoi-offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      db.createObjectStore("books", { keyPath: "id" });
-      db.createObjectStore("blobs", { keyPath: "id" });
-      db.createObjectStore("progress", { keyPath: "bookId" });
-      db.createObjectStore("bookDict", { keyPath: "bookId" });
-      db.createObjectStore("packs", { keyPath: "id" }); // chỉ dùng ở bản trình duyệt (dev)
+      const has = (n) => db.objectStoreNames.contains(n);
+      if (!has("books")) db.createObjectStore("books", { keyPath: "id" });
+      if (!has("blobs")) db.createObjectStore("blobs", { keyPath: "id" });
+      if (!has("progress")) db.createObjectStore("progress", { keyPath: "bookId" });
+      if (!has("bookDict")) db.createObjectStore("bookDict", { keyPath: "bookId" });
+      if (!has("packs")) db.createObjectStore("packs", { keyPath: "id" }); // chỉ dùng ở bản trình duyệt (dev)
+      if (!has("bookmarks")) db.createObjectStore("bookmarks", { keyPath: "id" }); // v2: đánh dấu câu
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -56,7 +58,15 @@ export const store = {
     await tx("books", "readwrite", (s) => s.delete(id));
     await tx("blobs", "readwrite", (s) => s.delete(id));
     await tx("progress", "readwrite", (s) => s.delete(id));
+    const bms = await this.listBookmarks(id);
+    for (const bm of bms) await tx("bookmarks", "readwrite", (s) => s.delete(bm.id));
   },
+  async listBookmarks(bookId) {
+    const all = (await tx("bookmarks", "readonly", (s) => s.getAll())) || [];
+    return all.filter((b) => b.bookId === bookId).sort((a, b) => a.sentenceIndex - b.sentenceIndex);
+  },
+  async putBookmark(bm) { await tx("bookmarks", "readwrite", (s) => s.put(bm)); },
+  async deleteBookmark(id) { await tx("bookmarks", "readwrite", (s) => s.delete(id)); },
   async getProgress(bookId) {
     return (await tx("progress", "readonly", (s) => s.get(bookId))) || null;
   },

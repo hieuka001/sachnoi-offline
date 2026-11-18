@@ -64,3 +64,18 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .audio-panel input[type="range"] { flex: 1; }
 .audio-panel span { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
 .btn.small { padding: 4px 10px; font-size: 13px; }
+
+/* Công cụ đọc: dấu trang / tìm kiếm / cỡ chữ / nền (1.1.0) */
+.tool-panel { background: var(--panel); border: 1px solid rgba(255,255,255,.08); border-radius: var(--radius-card); padding: 10px 12px; margin: 8px 0; }
+.tool-panel .hit { padding: 8px 6px; border-bottom: 1px solid rgba(127,127,127,.18); cursor: pointer; }
+.tool-panel .hit:last-child { border-bottom: 0; }
+.tool-panel .hit:hover { background: rgba(255,255,255,.05); }
+.tool-panel .hit .where { font-size: 12px; color: var(--accent); }
+.tool-panel .hit .snip { font-size: 14px; line-height: 1.45; }
+.input { background: var(--panel); color: var(--ink); border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius-btn); padding: 9px 10px; font: inherit; }
+.reader .sent.marked { box-shadow: inset 0 -2px 0 var(--accent); }
+.reader[data-theme="paper"] { background: #f3e9d2; color: #2b2118; padding: 16px 14px; border-radius: 12px; }
+.reader[data-theme="paper"] .sent.current { background: rgba(170,115,25,.32); }
+.reader[data-theme="light"] { background: #f7f7f4; color: #17181c; padding: 16px 14px; border-radius: 12px; }
+.reader[data-theme="light"] .sent.current { background: rgba(50,100,220,.28); }
+.wrap { flex-wrap: wrap; }

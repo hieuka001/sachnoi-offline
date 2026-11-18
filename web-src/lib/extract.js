@@ -6,11 +6,11 @@
 // lại từ file gốc ở lần mở kế tiếp (xem openBook trong app.js).
 export const EXTRACT_VERSION = 3;
 
-export async function extractBook(file) {
+export async function extractBook(file, opts = {}) {
   const name = file.name || "sach";
   const ext = name.split(".").pop().toLowerCase();
   if (ext === "epub") return extractEpub(file, name);
-  if (ext === "pdf") return extractPdf(file, name);
+  if (ext === "pdf") return extractPdf(file, name, opts);
   const text = await file.text();
   return { title: stripExt(name), author: "", chapters: splitPlainText(text), scanned: false, extractVersion: EXTRACT_VERSION };
 }
@@ -153,7 +153,38 @@ async function extractEpub(file, name) {
 }
 
 // ---------- PDF ----------
-async function extractPdf(file, name) {
+// OCR từng trang PDF scan: vẽ trang ra canvas (pdf.js) rồi nhờ native nhận chữ.
+// Gộp dòng thành đoạn: dòng không kết thúc bằng dấu câu + dòng sau viết thường
+// thì nối tiếp, còn lại xuống đoạn mới.
+async function ocrPdfPages(pdf, opts) {
+  const chapters = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d");
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+    canvas.width = 0; canvas.height = 0; // giải phóng bộ nhớ ngay
+    if (!blob) continue;
+    const raw = (await opts.ocr(blob)) || "";
+    const lines = raw.split("\n").map((x) => x.trim()).filter(Boolean);
+    const paragraphs = [];
+    for (const line of lines) {
+      const prev = paragraphs[paragraphs.length - 1];
+      if (prev && !/[.!?…:;”"]$/.test(prev) && /^[a-zà-ỹ]/.test(line)) {
+        paragraphs[paragraphs.length - 1] = prev + " " + line;
+      } else paragraphs.push(line);
+    }
+    if (opts.onProgress) opts.onProgress(Math.round((p / pdf.numPages) * 100), `Đang nhận dạng chữ (OCR) trang ${p}/${pdf.numPages}…`);
+    if (paragraphs.length) chapters.push({ title: `Trang ${p}`, paragraphs });
+  }
+  return chapters;
+}
+
+async function extractPdf(file, name, opts = {}) {
   const pdfjs = await import("../vendor/pdf.min.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.min.mjs", import.meta.url).href;
   const data = await file.arrayBuffer();
@@ -190,20 +221,41 @@ async function extractPdf(file, name) {
     if (text) chapters.push({ title: `Trang ${p}`, paragraphs: [text] });
   }
   // Ít hơn ~30 ký tự/trang = sách scan (chỉ có ảnh, không lớp chữ).
-  // Không ném lỗi nữa: vẫn nhận sách vào thư viện, gắn cờ scan và 1 chương giải thích —
-  // người dùng biết rõ lý do thay vì một câu báo lỗi chung chung.
   const scanned = totalChars / pdf.numPages < 30;
   if (scanned) {
+    // 1.1.0: thử OCR offline (Apple Vision qua cầu native, chỉ app iOS 16+).
+    // OCR chạy 1 lần lúc nhập sách, kết quả lưu như sách thường.
+    let ocrNote = "";
+    if (opts.ocr) {
+      try {
+        const ocrChapters = await ocrPdfPages(pdf, opts);
+        const ocrChars = ocrChapters.reduce((a, c) => a + c.paragraphs.join("").length, 0);
+        if (ocrChapters.length && ocrChars > 200) {
+          return { title: stripExt(name), author: "", chapters: ocrChapters, scanned: true, ocr: true, pages: pdf.numPages, extractVersion: EXTRACT_VERSION };
+        }
+        ocrNote = " Đã thử nhận dạng chữ (OCR) nhưng chữ nhận được quá ít — có thể bản scan quá mờ.";
+      } catch (e) {
+        ocrNote = ` OCR chưa chạy được: ${e?.message || e}`;
+      }
+    }
     return {
       title: stripExt(name), author: "", scanned: true, pages: pdf.numPages, totalChars, extractVersion: EXTRACT_VERSION,
       chapters: [{
         title: "Sách scan — chưa đọc được",
-        paragraphs: [`Sách này có ${pdf.numPages} trang nhưng chỉ trích được ${totalChars} ký tự chữ. Đây là sách scan dạng ảnh, không có lớp chữ bên dưới. Bản hiện tại chưa có nhận dạng chữ từ ảnh (OCR) nên chưa đọc được sách này. Các sách PDF có lớp chữ và EPUB vẫn đọc bình thường.`],
+        paragraphs: [`Sách này có ${pdf.numPages} trang nhưng chỉ trích được ${totalChars} ký tự chữ. Đây là sách scan dạng ảnh, không có lớp chữ bên dưới.${ocrNote} Tính năng nhận dạng chữ (OCR) chạy trong app iOS 16 trở lên; sách PDF có lớp chữ và EPUB vẫn đọc bình thường.`],
       }],
     };
   }
   if (!chapters.length) throw new Error(`Không trích được chữ từ PDF này (${pdf.numPages} trang, 0 ký tự).`);
-  return { title: stripExt(name), author: "", chapters, scanned, pages: pdf.numPages, extractVersion: EXTRACT_VERSION };
+  // Lọc bìa + mục lục ở các trang đầu (dùng chung bộ lọc với EPUB, 1.1.0).
+  const pageLines = (ch) => ch.paragraphs.flatMap((x) => x.split("\n")).map((x) => clean(x)).filter(Boolean);
+  let kept = chapters.filter((ch, i) => {
+    if (i === 0 && isCoverLikeChapter(pageLines(ch))) return false;
+    if (i < 6 && (isTocLikeChapter(pageLines(ch)) || isTocLikeText(pageLines(ch)))) return false;
+    return true;
+  });
+  if (!kept.length) kept = chapters;
+  return { title: stripExt(name), author: "", chapters: kept, scanned, pages: pdf.numPages, extractVersion: EXTRACT_VERSION };
 }
 
 // ---------- TXT / MD ----------

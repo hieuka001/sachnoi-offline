@@ -30,6 +30,7 @@ state.player = new Player({
     $("playerSentence").textContent = s.original;
     $("playerProgress").textContent = `Câu ${idx + 1} / ${state.player.sentences.length} · ${s.chapterTitle || ""}`;
     highlightSentence(idx);
+    refreshBmBtn();
     store.setProgress(state.book.id, {
       sentenceIndex: idx,
       totalSentences: state.player.sentences.length,
@@ -111,12 +112,30 @@ async function renderLibrary() {
   }));
 }
 
+// OCR offline qua cầu native (Apple Vision). Chỉ có trong app iOS; bản web trả null.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+function makeExtractOpts(statusEl) {
+  const bridge = native();
+  const ocr = bridge?.ocrImage ? async (blob) => {
+    const res = await bridge.ocrImage({ image: await blobToBase64(blob) });
+    return res?.text || "";
+  } : null;
+  return { ocr, onProgress: (_pct, msg) => { if (statusEl && msg) statusEl.textContent = msg; } };
+}
+
 $("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   $("importStatus").textContent = `Đang đọc file ${file.name}…`;
   try {
-    const extracted = await extractBook(file);
+    const extracted = await extractBook(file, makeExtractOpts($("importStatus")));
     const meta = {
       id: newId(), title: extracted.title, author: extracted.author,
       format: file.name.split(".").pop().toLowerCase(), chapters: extracted.chapters.length,
@@ -125,9 +144,11 @@ $("fileInput").addEventListener("change", async (e) => {
     await store.addBook(meta, file);
     // Lưu kèm bản đã trích để mở lại không phải trích lại từ đầu
     await store.setProgress(meta.id, { extractedCache: extracted, sentenceIndex: 0 });
-    $("importStatus").textContent = extracted.scanned
-      ? `Đã thêm “${meta.title}” — nhưng đây là sách scan (${extracted.pages} trang, chỉ trích được ${extracted.totalChars ?? 0} ký tự): bản này chưa có OCR nên chưa đọc được, mở sách sẽ thấy phần giải thích.`
-      : `Đã thêm “${meta.title}” (${meta.chapters} chương/phần).`;
+    $("importStatus").textContent = extracted.ocr
+      ? `Đã thêm “${meta.title}” — sách scan đã nhận dạng chữ (OCR) xong ${extracted.pages} trang, mở sách nghe bình thường.`
+      : extracted.scanned
+        ? `Đã thêm “${meta.title}” — nhưng đây là sách scan (${extracted.pages} trang, chỉ trích được ${extracted.totalChars ?? 0} ký tự) và OCR chưa chạy được trên máy này; mở sách sẽ thấy phần giải thích.`
+        : `Đã thêm “${meta.title}” (${meta.chapters} chương/phần).`;
     renderLibrary();
   } catch (err) {
     $("importStatus").textContent = "Không đọc được file: " + err.message;
@@ -152,7 +173,7 @@ async function openBook(id, autoplay = false) {
     if (!blob) {
       if (!extracted) { alert("Không tìm thấy file sách trên máy."); return; }
     } else {
-      extracted = await extractBook(new File([blob], meta.title + "." + meta.format));
+      extracted = await extractBook(new File([blob], meta.title + "." + meta.format), makeExtractOpts($("readerTitle")));
       if (cacheStale) startSentence = 0;
       await store.setProgress(id, { extractedCache: extracted, sentenceIndex: startSentence });
       if (extracted.chapters.length !== meta.chapters) {
@@ -168,6 +189,9 @@ async function openBook(id, autoplay = false) {
   $("scanWarn").classList.toggle("hidden", !extracted.scanned);
   $("chapterSelect").innerHTML = extracted.chapters.map((c, i) => `<option value="${i}">${escapeHtml(c.title || `Phần ${i + 1}`)}</option>`).join("");
   await state.player.load(meta, extracted, await store.getBookDict(id));
+  state.bookmarks = await store.listBookmarks(id);
+  renderBookmarks();
+  refreshBmBtn();
   // Tìm chương chứa câu đã nghe dở
   let acc = 0, startChapter = 0;
   for (let i = 0; i < state.player.sentences.length; i++) { if (i === startSentence) { startChapter = state.player.sentences[i].chapterIndex; break; } }
@@ -211,9 +235,13 @@ function showChapter(ci) {
   // Chỉ số câu bắt đầu của chương này trong danh sách phẳng
   state.sentenceOffset = state.player.sentences.findIndex((s) => s.chapterIndex === ci);
   let globalIdx = state.sentenceOffset;
+  const marked = new Set((state.bookmarks || []).map((b) => b.sentenceIndex));
   $("readerBody").innerHTML = ch.paragraphs.map((para) => {
     const sents = splitSentences(para);
-    const html = sents.map((s) => `<span class="sent" data-idx="${globalIdx++}">${escapeHtml(s)}</span>`).join(" ");
+    const html = sents.map((s) => {
+      const gi = globalIdx++;
+      return `<span class="sent${marked.has(gi) ? " marked" : ""}" data-idx="${gi}">${escapeHtml(s)}</span>`;
+    }).join(" ");
     return `<p>${html}</p>`;
   }).join("");
   $("readerBody").querySelectorAll(".sent").forEach((el) => {
@@ -249,6 +277,108 @@ $("backBtn").addEventListener("click", () => {
   $("view-library").classList.add("active");
   renderLibrary();
 });
+
+// ---------- Dấu trang / tìm trong sách / giao diện đọc (1.1.0) ----------
+function currentSentenceIdx() {
+  if (state.player.index >= 0) return state.player.index;
+  return state.sentenceOffset >= 0 ? state.sentenceOffset : 0;
+}
+function isBookmarked(idx) { return (state.bookmarks || []).some((b) => b.sentenceIndex === idx); }
+function refreshBmBtn() {
+  if (!state.book) return;
+  $("bmBtn").textContent = isBookmarked(currentSentenceIdx()) ? "Bỏ đánh dấu câu này" : "Đánh dấu câu này";
+}
+async function renderBookmarks() {
+  const list = state.bookmarks || [];
+  $("bmCount").textContent = String(list.length);
+  $("bmPanel").innerHTML = list.length ? list.map((b) => `
+    <div class="hit" data-bm-jump="${b.sentenceIndex}">
+      <div class="where">${escapeHtml(b.chapterTitle || "")} · Câu ${b.sentenceIndex + 1}</div>
+      <div class="snip">${escapeHtml(b.text)}</div>
+      <button class="btn small" data-bm-del="${b.id}">Xoá dấu</button>
+    </div>`).join("") : `<p class="muted">Chưa có dấu trang nào trong sách này. Nghe tới câu hay, bấm “Đánh dấu câu này”.</p>`;
+  $("bmPanel").querySelectorAll("[data-bm-jump]").forEach((el) => el.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-bm-del]")) return;
+    jumpToSentence(parseInt(el.dataset.bmJump, 10));
+  }));
+  $("bmPanel").querySelectorAll("[data-bm-del]").forEach((el) => el.addEventListener("click", async () => {
+    await store.deleteBookmark(el.dataset.bmDel);
+    state.bookmarks = await store.listBookmarks(state.book.id);
+    renderBookmarks(); refreshBmBtn();
+    showChapter(state.chapterIndex);
+  }));
+}
+function jumpToSentence(idx) {
+  const s = state.player.sentences[idx];
+  if (!s) return;
+  $("bmPanel").classList.add("hidden");
+  $("searchPanel").classList.add("hidden");
+  showChapter(s.chapterIndex);
+  state.player.play(idx);
+}
+$("bmBtn").addEventListener("click", async () => {
+  if (!state.book) return;
+  const idx = currentSentenceIdx();
+  const id = `${state.book.id}:${idx}`;
+  if (isBookmarked(idx)) {
+    await store.deleteBookmark(id);
+  } else {
+    const s = state.player.sentences[idx];
+    await store.putBookmark({
+      id, bookId: state.book.id, sentenceIndex: idx,
+      chapterTitle: s?.chapterTitle || "", text: (s?.original || "").slice(0, 140), createdAt: Date.now(),
+    });
+  }
+  state.bookmarks = await store.listBookmarks(state.book.id);
+  renderBookmarks(); refreshBmBtn();
+  showChapter(state.chapterIndex);
+});
+$("bmListBtn").addEventListener("click", () => { $("bmPanel").classList.toggle("hidden"); $("searchPanel").classList.add("hidden"); });
+$("searchBtn").addEventListener("click", () => { $("searchPanel").classList.toggle("hidden"); $("bmPanel").classList.add("hidden"); $("searchInput").focus(); });
+
+// Tìm không dấu: bỏ dấu tiếng Việt để "dao duc" cũng tìm được "Đạo Đức"
+function foldText(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+}
+function runSearch() {
+  const q = foldText($("searchInput").value.trim());
+  const box = $("searchResults");
+  if (q.length < 2) { box.innerHTML = `<p class="muted">Nhập ít nhất 2 ký tự.</p>`; return; }
+  const hits = [];
+  state.player.sentences.forEach((s, i) => {
+    if (hits.length >= 100) return;
+    if (foldText(s.original).includes(q)) hits.push(i);
+  });
+  box.innerHTML = hits.length ? `<p class="muted">${hits.length} kết quả — chạm để nghe từ câu đó:</p>` + hits.map((i) => {
+    const s = state.player.sentences[i];
+    return `<div class="hit" data-hit="${i}"><div class="where">${escapeHtml(s.chapterTitle || "")} · Câu ${i + 1}</div><div class="snip">${escapeHtml(s.original.slice(0, 160))}</div></div>`;
+  }).join("") : `<p class="muted">Không tìm thấy “${escapeHtml($("searchInput").value.trim())}” trong sách này.</p>`;
+  box.querySelectorAll("[data-hit]").forEach((el) => el.addEventListener("click", () => jumpToSentence(parseInt(el.dataset.hit, 10))));
+}
+$("searchGo").addEventListener("click", runSearch);
+$("searchInput").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+
+// Cỡ chữ + nền màn hình đọc (lưu trên máy)
+const readerPrefs = (() => {
+  const d = { fontSize: 18, theme: "dark" };
+  try { return { ...d, ...JSON.parse(localStorage.getItem("sachnoi.reader") || "{}") }; } catch { return d; }
+})();
+const THEMES = [["dark", "Tối"], ["paper", "Giấy"], ["light", "Sáng"]];
+function applyReaderPrefs() {
+  const rb = $("readerBody");
+  rb.style.fontSize = `${readerPrefs.fontSize}px`;
+  rb.dataset.theme = readerPrefs.theme;
+  $("themeBtn").textContent = "Nền: " + (THEMES.find(([k]) => k === readerPrefs.theme)?.[1] || "Tối");
+  try { localStorage.setItem("sachnoi.reader", JSON.stringify(readerPrefs)); } catch {}
+}
+$("fontMinus").addEventListener("click", () => { readerPrefs.fontSize = Math.max(14, readerPrefs.fontSize - 2); applyReaderPrefs(); });
+$("fontPlus").addEventListener("click", () => { readerPrefs.fontSize = Math.min(28, readerPrefs.fontSize + 2); applyReaderPrefs(); });
+$("themeBtn").addEventListener("click", () => {
+  const i = THEMES.findIndex(([k]) => k === readerPrefs.theme);
+  readerPrefs.theme = THEMES[(i + 1) % THEMES.length][0];
+  applyReaderPrefs();
+});
+applyReaderPrefs();
 
 // ---------- Giọng ----------
 async function renderVoices() {

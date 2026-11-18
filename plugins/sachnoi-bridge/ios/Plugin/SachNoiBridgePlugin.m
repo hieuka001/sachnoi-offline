@@ -29,5 +29,6 @@ CAP_PLUGIN(SachNoiBridgePlugin, "SachNoiBridge",
            CAP_PLUGIN_METHOD(ttsSetVoice, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsSetSleep, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsSetAudio, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ocrImage, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsPlayerState, CAPPluginReturnPromise);
 )
