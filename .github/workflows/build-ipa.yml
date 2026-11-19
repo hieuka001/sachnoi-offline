@@ -34,19 +34,27 @@ jobs:
       - name: Build web (đóng kèm trong app — app chạy offline, không nạp web từ xa)
         run: npm run build:web
 
-      # 3.3.0: TTS = sherpa-onnx (xcframework tĩnh chính thức của k2-fsa,
-      # ghim bản 1.13.8) + model Supertonic 3 int8 gắn sẵn. Engine VieNeu
-      # tự port + sea-g2p Rust đã XOÁ nên không còn bước build Rust nữa.
+      # 3.3.0: TTS = sherpa-onnx (xcframework chính thức của k2-fsa, ghim bản
+      # 1.13.8) + model Supertonic 3 int8 gắn sẵn. Engine VieNeu tự port +
+      # sea-g2p Rust đã XOÁ nên không còn bước build Rust nữa.
+      # Biến thể "shared-onnxruntime-static": dylib SherpaOnnxC TỰ CHỨA
+      # onnxruntime (kiểm tại máy: 0 tham chiếu Ort chưa định nghĩa, chỉ
+      # link framework hệ thống). Biến thể "-ios-static" KHÔNG tự chứa —
+      # link lỗi "Undefined _OrtGetApiBase" (2.0.0 fix3, commit 57ee1bb).
+      # Gói của biến thể này đã sẵn tên SherpaOnnxC.xcframework — khớp
+      # framework bên trong, khỏi đổi tên (2.0.0 fix2, commit 7017eb0:
+      # CocoaPods lấy tên gói làm cờ -framework nên gói sherpa-onnx
+      # báo "framework 'sherpa-onnx' not found").
       - name: Fetch sherpa-onnx xcframework (k2-fsa release, pinned)
         run: |
           curl -fL --retry 3 -o /tmp/sherpa-ios.zip \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-static.xcframework.zip"
-          echo "6b8e769cb153343270fdccbe92e3b3db0d1c421d67fa0989ab01fdf5b2fcf2de  /tmp/sherpa-ios.zip" | shasum -a 256 -c -
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-shared-onnxruntime-static.xcframework.zip"
+          echo "e259a7d3b38ad7dec49bb078252a30bb42ede8355e2bb130cf8c1c78ed131f75  /tmp/sherpa-ios.zip" | shasum -a 256 -c -
           rm -rf /tmp/sherpa-ios && unzip -q /tmp/sherpa-ios.zip -d /tmp/sherpa-ios
           mkdir -p plugins/sachnoi-bridge/ios/Frameworks
-          rm -rf plugins/sachnoi-bridge/ios/Frameworks/sherpa-onnx.xcframework
-          cp -R /tmp/sherpa-ios/sherpa-onnx.xcframework plugins/sachnoi-bridge/ios/Frameworks/
-          ls plugins/sachnoi-bridge/ios/Frameworks/sherpa-onnx.xcframework
+          rm -rf plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
+          cp -R /tmp/sherpa-ios/SherpaOnnxC.xcframework plugins/sachnoi-bridge/ios/Frameworks/
+          ls plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
 
       # Model Supertonic 3 int8 GẮN SẴN (3.3.0, bản thử theo lệnh của anh):
       # gói gốc của k2-fsa (tts-models) tải nguyên tarball + kiểm SHA-256,
@@ -100,6 +108,12 @@ jobs:
           strings "$APP_PATH/App" | grep -m1 "Supertonic 3" || { echo "LỖI: binary không có SupertonicEngine"; exit 1; }
           strings "$APP_PATH/App" | grep -m1 "TTSRender" || { echo "LỖI: binary không có RenderStore (render trước)"; exit 1; }
           strings "$APP_PATH/App" | grep -m1 "AVSpeechSynthesizer" || { echo "LỖI: binary không có AVSpeechSynthesizer (giọng hệ thống)"; exit 1; }
+          echo "--- Kiểm tra framework SherpaOnnxC nhúng trong .app ---"
+          # SherpaOnnxC là framework ĐỘNG nhúng trong .app (onnxruntime nằm
+          # trong nó) — kiểm ở binary của framework, không phải binary App.
+          FW_BIN=$(find "$APP_PATH" -name "SherpaOnnxC" -type f | head -1)
+          [ -n "$FW_BIN" ] || { echo "LỖI: không thấy framework SherpaOnnxC trong .app"; exit 1; }
+          strings "$FW_BIN" | grep -m1 "SherpaOnnxCreateOfflineTts" || { echo "LỖI: framework không có sherpa-onnx"; exit 1; }
           du -sh "$APP_PATH"
           rm -rf Payload && mkdir Payload
           cp -R "$APP_PATH" Payload/

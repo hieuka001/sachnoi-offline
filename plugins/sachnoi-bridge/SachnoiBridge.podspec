@@ -12,10 +12,12 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '13.0'
   s.static_framework = true
   s.dependency 'Capacitor'
-  # 3.3.0: TTS dùng sherpa-onnx (xcframework tĩnh chính thức của k2-fsa,
+  # 3.3.0: TTS dùng sherpa-onnx (xcframework chính thức của k2-fsa,
   # CI tải về ios/Frameworks trước khi pod install) cho engine Supertonic
   # — engine VieNeu tự port cùng mọi phụ thuộc cũ của nó đã xoá hẳn.
-  s.vendored_frameworks = 'ios/Frameworks/sherpa-onnx.xcframework'
+  # Gói phải tên SherpaOnnxC.xcframework cho khớp framework bên trong
+  # (2.0.0 fix2 7017eb0: CocoaPods lấy tên gói làm cờ -framework).
+  s.vendored_frameworks = 'ios/Frameworks/SherpaOnnxC.xcframework'
   s.libraries = 'c++'
   s.swift_version = '5.1'
 end

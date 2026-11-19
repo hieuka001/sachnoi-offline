@@ -84,7 +84,11 @@ test("3.3.0: bản thử Supertonic — giọng hệ thống mặc định + Sup
   assert.ok(plugin.includes("systemVoices"), "plugin ttsVoices phải liệt kê giọng hệ thống");
   assert.ok(plugin.includes("supertonicPresets"), "plugin ttsVoices phải liệt kê thêm 10 giọng Supertonic");
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
-  assert.ok(podspec.includes("sherpa-onnx.xcframework"), "podspec phải vendor sherpa-onnx.xcframework");
+  // Gói PHẢI tên SherpaOnnxC.xcframework cho khớp framework bên trong —
+  // CocoaPods lấy tên gói làm cờ -framework (2.0.0 fix2 7017eb0; 3.3.0
+  // từng lùi về sherpa-onnx.xcframework và CI chết "framework
+  // 'sherpa-onnx' not found" ở build 44570504734).
+  assert.ok(podspec.includes("SherpaOnnxC.xcframework"), "podspec phải vendor SherpaOnnxC.xcframework");
   assert.ok(!podspec.includes("onnxruntime"), "podspec vẫn còn onnxruntime-objc");
   assert.ok(!podspec.includes("sea_g2p"), "podspec vẫn còn libsea_g2p_rs");
   const pbx = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
@@ -92,7 +96,10 @@ test("3.3.0: bản thử Supertonic — giọng hệ thống mặc định + Sup
   assert.ok(!pbx.includes("TTSAssets"), "pbxproj vẫn còn TTSAssets");
   assert.ok(!pbx.includes("NanoAssets"), "pbxproj vẫn còn NanoAssets");
   const ci = readFileSync(join(root, ".github/workflows/build-ipa.yml"), "utf8");
-  assert.ok(ci.includes("sherpa-onnx-v1.13.8-ios-static.xcframework.zip"), "CI phải tải xcframework sherpa-onnx 1.13.8 ghim bản");
+  // Biến thể PHẢI là shared-onnxruntime-static (dylib tự chứa onnxruntime)
+  // — biến thể -ios-static cần onnxruntime riêng và link lỗi Undefined
+  // _OrtGetApiBase (2.0.0 fix3 57ee1bb; 3.3.0 từng lùi về -ios-static).
+  assert.ok(ci.includes("sherpa-onnx-v1.13.8-ios-shared-onnxruntime-static.xcframework.zip"), "CI phải tải xcframework sherpa-onnx 1.13.8 ghim bản (biến thể shared-onnxruntime-static)");
   assert.ok(ci.includes("sherpa-onnx-supertonic-3-tts-int8-2026-05-11"), "CI phải tải gói Supertonic 3 int8 của k2-fsa");
   assert.ok(!ci.includes("libsea_g2p_rs"), "CI vẫn còn bước build Rust sea-g2p");
 });
