@@ -2,10 +2,11 @@ import Foundation
 import CryptoKit
 
 /// PackStore — nơi lưu các gói tải về (core engine + từng giọng) trên máy.
-/// Từ 1.0.5: core VieNeu Turbo int8 (260MB) GẮN SẴN trong app (TTSAssets ở
-/// bundle, xem vieneuAssetsURL) — mở app là nghe ngay. Các gói khác vẫn tải từ
-/// GitHub Releases về Application Support/SachNoi/TTSPacks/<packId>/ — iOS
-/// không tự xoá thư mục này như Caches, và đã tắt backup iCloud.
+/// Từ 3.3.0: model Supertonic 3 int8 (~145MB) GẮN SẴN trong app
+/// (SupertonicAssets ở bundle, xem supertonicAssetsURL) — mở app là nghe
+/// ngay. Các gói khác vẫn tải từ GitHub Releases về Application
+/// Support/SachNoi/TTSPacks/<packId>/ — iOS không tự xoá thư mục này như
+/// Caches, và đã tắt backup iCloud.
 public enum PackStore {
     public static var rootURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -29,11 +30,12 @@ public enum PackStore {
         try? url.setResourceValues(values)
     }
 
-    /// Assets engine Turbo: gói đã tải về (nếu có) trước, không thì bản
-    /// GẮN SẴN trong app (TTSAssets ở bundle, từ 1.0.5).
-    public static func vieneuAssetsURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "TTSAssets", withExtension: nil),
-           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
+    /// Assets engine Supertonic 3 (3.3.0): bản GẮN SẴN trong app
+    /// (SupertonicAssets ở bundle — CI tải gói int8 của sherpa-onnx và
+    /// kiểm SHA-256 trước khi đóng gói).
+    public static func supertonicAssetsURL() -> URL? {
+        if let bundled = Bundle.main.url(forResource: "SupertonicAssets", withExtension: nil),
+           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("voice.bin").path) {
             return bundled
         }
         return nil

@@ -1,6 +1,6 @@
 // player.js — Bộ phát nghe sách: tổng hợp từng câu (prefetch 2 câu), highlight
 // theo câu, phát nền qua <audio> + Media Session (web) và cầu native (iOS).
-// Trong app iOS: giọng VieNeu native. Trên trình duyệt (dev): rơi về giọng hệ thống.
+// Trong app iOS: giọng native (Supertonic / hệ thống). Trên trình duyệt (dev): rơi về giọng hệ thống.
 
 import { prepareForSpeech, cleanupText, splitSentences } from "../text-engine/index.js";
 import { buildBookSentencesAsync } from "./spokenCache.js";

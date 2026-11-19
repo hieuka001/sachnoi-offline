@@ -58,55 +58,64 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
-test("3.1.0: lai — giọng hệ thống mặc định + engine VieNeu Turbo cho 4 giọng", () => {
+test("3.3.0: bản thử Supertonic — giọng hệ thống mặc định + Supertonic 3 qua sherpa-onnx, VieNeu gỡ hẳn", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
   assert.ok(server.includes("AVSpeechSynthesizer"), "TtsServer phải có giọng hệ thống (AVSpeechSynthesizer)");
   assert.ok(server.includes("synthesizer.write"), "TtsServer phải render giọng hệ thống qua AVSpeechSynthesizer.write");
-  assert.ok(server.includes("vieneuVoices"), "TtsServer thiếu danh sách 4 giọng VieNeu");
-  assert.ok(server.includes("isVieNeu"), "TtsServer thiếu định tuyến isVieNeu");
-  assert.ok(server.includes("synthesizeTurbo"), "TtsServer thiếu đường tổng hợp Turbo");
-  assert.ok(server.includes("VieNeuEngine"), "TtsServer phải dùng lại VieNeuEngine cho 4 giọng");
-  assert.ok(existsSync(join(pluginDir, "VieNeuEngine.swift")), "VieNeuEngine.swift phải được khôi phục ở 3.1.0");
-  assert.ok(!existsSync(join(pluginDir, "NanoEngine.swift")), "NanoEngine vẫn phải vắng mặt (Nano đã bỏ)");
-  assert.ok(!existsSync(join(pluginDir, "SherpaTts.swift")), "SherpaTts vẫn phải vắng mặt");
+  assert.ok(server.includes("supertonicPresets"), "TtsServer thiếu bảng 10 giọng Supertonic");
+  assert.ok(server.includes("isSupertonic"), "TtsServer thiếu định tuyến isSupertonic");
+  assert.ok(server.includes("synthesizeSupertonic"), "TtsServer thiếu đường tổng hợp Supertonic");
+  assert.ok(server.includes("SupertonicEngine"), "TtsServer phải dùng SupertonicEngine");
+  assert.ok(existsSync(join(pluginDir, "SupertonicEngine.swift")), "SupertonicEngine.swift phải tồn tại ở 3.3.0");
+  assert.ok(!existsSync(join(pluginDir, "VieNeuEngine.swift")), "VieNeuEngine phải đã gỡ ở 3.3.0");
+  assert.ok(!existsSync(join(pluginDir, "NanoEngine.swift")), "NanoEngine vẫn phải vắng mặt");
   assert.ok(!server.includes("NWListener"), "TtsServer vẫn còn server HTTP thừa");
+  const engine = readFileSync(join(pluginDir, "SupertonicEngine.swift"), "utf8");
+  assert.ok(engine.includes("SherpaOnnxC"), "SupertonicEngine phải gọi C API sherpa-onnx qua SherpaOnnxC");
+  assert.ok(engine.includes("config.model.supertonic"), "SupertonicEngine phải cấu hình model supertonic");
+  assert.ok(engine.includes("voice_style"), "SupertonicEngine thiếu voice_style (voice.bin)");
+  assert.ok(engine.includes('\\"lang\\"'), "SupertonicEngine phải chọn lang trong extra JSON");
+  assert.ok(engine.includes("SherpaOnnxOfflineTtsGenerateWithConfig"), "SupertonicEngine phải sinh bằng GenerateWithConfig (cần sid + lang)");
   const packStore = readFileSync(join(pluginDir, "PackStore.swift"), "utf8");
-  assert.ok(packStore.includes("vieneuAssetsURL"), "PackStore phải có lại vieneuAssetsURL");
-  assert.ok(!packStore.includes("nanoAssetsURL"), "PackStore vẫn còn nanoAssetsURL");
+  assert.ok(packStore.includes("supertonicAssetsURL"), "PackStore phải có supertonicAssetsURL");
+  assert.ok(!packStore.includes("vieneuAssetsURL"), "PackStore vẫn còn vieneuAssetsURL");
   const plugin = readFileSync(join(pluginDir, "SachNoiBridgePlugin.swift"), "utf8");
   assert.ok(plugin.includes("systemVoices"), "plugin ttsVoices phải liệt kê giọng hệ thống");
-  assert.ok(plugin.includes("getVoiceStore"), "plugin ttsVoices phải liệt kê thêm 4 giọng VieNeu");
+  assert.ok(plugin.includes("supertonicPresets"), "plugin ttsVoices phải liệt kê thêm 10 giọng Supertonic");
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
-  assert.ok(podspec.includes("onnxruntime"), "podspec phải có lại onnxruntime-objc cho Turbo");
-  assert.ok(podspec.includes("sea_g2p"), "podspec phải có lại libsea_g2p_rs");
-  assert.ok(!podspec.includes("SherpaOnnxC"), "podspec vẫn còn sherpa");
+  assert.ok(podspec.includes("sherpa-onnx.xcframework"), "podspec phải vendor sherpa-onnx.xcframework");
+  assert.ok(!podspec.includes("onnxruntime"), "podspec vẫn còn onnxruntime-objc");
+  assert.ok(!podspec.includes("sea_g2p"), "podspec vẫn còn libsea_g2p_rs");
   const pbx = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
-  assert.ok(pbx.includes("TTSAssets"), "pbxproj phải có lại TTSAssets (core Turbo gắn sẵn)");
+  assert.ok(pbx.includes("SupertonicAssets"), "pbxproj phải có SupertonicAssets (model gắn sẵn)");
+  assert.ok(!pbx.includes("TTSAssets"), "pbxproj vẫn còn TTSAssets");
   assert.ok(!pbx.includes("NanoAssets"), "pbxproj vẫn còn NanoAssets");
+  const ci = readFileSync(join(root, ".github/workflows/build-ipa.yml"), "utf8");
+  assert.ok(ci.includes("sherpa-onnx-v1.13.8-ios-static.xcframework.zip"), "CI phải tải xcframework sherpa-onnx 1.13.8 ghim bản");
+  assert.ok(ci.includes("sherpa-onnx-supertonic-3-tts-int8-2026-05-11"), "CI phải tải gói Supertonic 3 int8 của k2-fsa");
+  assert.ok(!ci.includes("libsea_g2p_rs"), "CI vẫn còn bước build Rust sea-g2p");
 });
 
-test("3.1.0: đúng 4 giọng VieNeu Bắc/Nam x nam/nữ + 1 giọng hệ thống — manifest khớp Swift", () => {
+test("3.3.0: đúng 10 giọng Supertonic (5 nữ F1–F5 + 5 nam M1–M5) + 1 giọng hệ thống — manifest khớp Swift", () => {
   const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
-  assert.equal(manifest.voices.length, 5, "manifest phải có 5 giọng (1 hệ thống + 4 VieNeu)");
+  assert.equal(manifest.voices.length, 11, "manifest phải có 11 giọng (1 hệ thống + 10 Supertonic)");
   const system = manifest.voices.filter(v => v.engine === "system");
   assert.equal(system.length, 1, "phải có đúng 1 giọng hệ thống");
   assert.equal(system[0].id, "Linh");
-  const turbo = manifest.voices.filter(v => v.engine === "vieneu-turbo");
-  assert.equal(turbo.length, 4, "phải có đúng 4 giọng VieNeu");
-  const matrix = Object.fromEntries(turbo.map(v => [v.id, `${v.region}|${v.gender}`]));
-  assert.deepEqual(matrix, {
-    "Trúc Ly": "Miền Bắc|Nữ",
-    "Hải Đăng": "Miền Bắc|Nam",
-    "Thùy Dung": "Miền Nam|Nữ",
-    "Thái Sơn": "Miền Nam|Nam",
-  }, "4 giọng phải phủ Bắc/Nam x nam/nữ");
+  const sup = manifest.voices.filter(v => v.engine === "supertonic");
+  assert.equal(sup.length, 10, "phải có đúng 10 giọng Supertonic");
+  assert.deepEqual(sup.filter(v => v.gender === "Nữ").map(v => v.id),
+    ["supertonic/F1", "supertonic/F2", "supertonic/F3", "supertonic/F4", "supertonic/F5"], "5 giọng nữ F1–F5");
+  assert.deepEqual(sup.filter(v => v.gender === "Nam").map(v => v.id),
+    ["supertonic/M1", "supertonic/M2", "supertonic/M3", "supertonic/M4", "supertonic/M5"], "5 giọng nam M1–M5");
   const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
-  for (const name of Object.keys(matrix)) {
-    assert.ok(server.includes(`"${name}"`), `TtsServer.vieneuVoices thiếu "${name}"`);
+  for (const v of sup) {
+    assert.ok(server.includes(`"${v.id}"`), `TtsServer.supertonicPresets thiếu "${v.id}"`);
   }
-  const pack = manifest.packs.find(p => p.id === "vieneu-turbo-int8");
-  assert.ok(pack && pack.status === "available", "gói vieneu-turbo-int8 phải available");
+  const pack = manifest.packs.find(p => p.id === "supertonic-3-int8");
+  assert.ok(pack && pack.status === "available", "gói supertonic-3-int8 phải available");
+  assert.equal(pack.files.length, 7, "gói Supertonic phải có đúng 7 file");
 });
 
 test("2.2.0/3.2.0: render trước cả cuốn — RenderStore + BookRenderer + NativePlayer đọc từ file", () => {
@@ -175,18 +184,14 @@ test("3.2.0 (VoiceStudio): render TỰ TIẾP TỤC khi mở app — ttsRenderBo
   assert.ok(appJs.includes("lastListenedAt"), "resumeRender phải chọn cuốn nghe gần nhất");
 });
 
-test("3.2.1: nền thuộc về tầng phát — renderer chỉ chạy tiền cảnh, hồ Turbo dựng lười + xả khi vào nền", () => {
+test("3.2.1: nền thuộc về tầng phát — renderer chỉ chạy tiền cảnh, preRender không đè phiên thật", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const renderer = readFileSync(join(pluginDir, "BookRenderer.swift"), "utf8");
   assert.ok(renderer.includes("applicationState"), "BookRenderer phải kiểm tra applicationState (chỉ render khi app active)");
   assert.ok(renderer.includes("UIApplication"), "BookRenderer thiếu UIApplication");
   const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
-  const warmupBody = server.slice(server.indexOf("func warmup()"), server.indexOf("func drainPool()"));
-  assert.ok(!warmupBody.includes("makeEngine"), "warmup KHÔNG được dựng engine Turbo lúc mở app (dựng lười)");
-  assert.ok(server.includes("drainPool"), "TtsServer thiếu drainPool (xả hồ khi vào nền)");
-  assert.ok(server.includes("didEnterBackgroundNotification"), "TtsServer phải xả hồ khi app vào nền");
-  assert.ok(server.includes("didReceiveMemoryWarningNotification"), "TtsServer phải xả hồ khi iOS cảnh báo bộ nhớ");
-  assert.ok(server.includes("poolDrained"), "releaseEngine phải thả rơi engine khi hồ đang xả");
+  const warmupBody = server.slice(server.indexOf("func warmup()"), server.indexOf("// MARK: - Supertonic"));
+  assert.ok(!warmupBody.includes("SupertonicEngine("), "warmup KHÔNG được dựng engine Supertonic lúc mở app (dựng lười)");
   const player = readFileSync(join(pluginDir, "NativePlayer.swift"), "utf8");
   assert.ok(player.includes("didLoad"), "NativePlayer thiếu cờ didLoad chặn preRender sau phiên thật");
   assert.ok(player.includes("!self.didLoad"), "preRender phải bị chặn khi đã có phiên load thật");

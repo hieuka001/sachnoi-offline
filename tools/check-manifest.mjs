@@ -18,11 +18,11 @@ for (const p of m.packs || []) {
     }
   }
 }
-// 3.1.0: 1 giọng hệ thống (Linh, mặc định) + đúng 4 giọng VieNeu Turbo
-// (Bắc/Nam x nam/nữ); gói core turbo-int8 phải available.
-if ((m.voices || []).length !== 5) errors.push(`Danh sách giọng phải đúng 5 (1 hệ thống + 4 VieNeu): đang có ${(m.voices || []).length}`);
+// 3.3.0: 1 giọng hệ thống (Linh, mặc định) + đúng 10 giọng Supertonic 3
+// (5 nữ F1–F5 + 5 nam M1–M5); gói supertonic-3-int8 phải available.
+if ((m.voices || []).length !== 11) errors.push(`Danh sách giọng phải đúng 11 (1 hệ thống + 10 Supertonic): đang có ${(m.voices || []).length}`);
 if ((m.voices || []).filter(v => v.engine === "system").length !== 1) errors.push("Phải có đúng 1 giọng engine 'system'");
-if ((m.voices || []).filter(v => v.engine === "vieneu-turbo").length !== 4) errors.push("Phải có đúng 4 giọng engine 'vieneu-turbo'");
-if (!(m.packs || []).some(p => p.id === "vieneu-turbo-int8" && p.status === "available")) errors.push("Thiếu gói vieneu-turbo-int8 (available)");
+if ((m.voices || []).filter(v => v.engine === "supertonic").length !== 10) errors.push("Phải có đúng 10 giọng engine 'supertonic'");
+if (!(m.packs || []).some(p => p.id === "supertonic-3-int8" && p.status === "available")) errors.push("Thiếu gói supertonic-3-int8 (available)");
 if (errors.length) { console.error("MANIFEST LỖI:\n- " + errors.join("\n- ")); process.exit(1); }
 console.log(`Manifest OK: ${m.packs.length} gói, ${m.voices.length} giọng, version ${m.version}`);

@@ -1,31 +1,47 @@
 import Foundation
 import AVFoundation
-import UIKit
 
 /// Mặt tiền tổng hợp giọng nói của app (NativePlayer, BookRenderer và
 /// plugin gọi: start / warmup / synthesizeSync / diagnostics).
 ///
-/// 3.1.0 — LAI theo lệnh của anh: nền NHẸ của 3.0.0 + thêm 4 giọng VieNeu.
-///  * **Giọng hệ thống iOS** (AVSpeechSynthesizer, giọng "Linh") là MẶC
-///    ĐỊNH: 0 MB model, nhẹ CPU, không nóng máy, khoá màn hình vẫn đọc —
-///    đường an toàn cho việc nghe hằng ngày.
-///  * **4 giọng VieNeu Turbo** chọn tường minh mới đi đường engine cũ:
-///    Trúc Ly (Bắc, nữ), Hải Đăng (Bắc, nam), Thùy Dung (Nam, nữ),
-///    Thái Sơn (Nam, nam). Core Turbo int8 260MB gắn sẵn như trước; hồ
-///    2 engine như 1.9.5. Đánh đổi đã biết: đường VieNeu sinh chậm và
-///    nóng máy hơn — cơ chế render trước cả cuốn (BookRenderer +
-///    RenderStore) gánh phần liền mạch cho cả hai đường.
-/// Nano vẫn bỏ hẳn (đã chết trên máy thật ở 2.1.0). synthesizeSync luôn
-/// trả WAV PCM16 nên NativePlayer/RenderStore/BookRenderer không đổi.
+/// 3.3.0 — BẢN THỬ SUPERTONIC theo lệnh của anh (sau khi số liệu máy thật
+/// 3.2.1 chốt hạ VieNeu Turbo: sinh chậm hơn thời gian thực ~4,4 lần —
+/// nghe chờ từng đoạn, không chạy nền nổi; Turbo đã gỡ hẳn ở bản này):
+///  * **Giọng hệ thống iOS** (AVSpeechSynthesizer, giọng "Linh") vẫn là
+///    MẶC ĐỊNH: 0 MB model, nhẹ CPU, khoá màn hình vẫn đọc — đường an
+///    toàn cho việc nghe hằng ngày.
+///  * **10 giọng Supertonic 3** qua sherpa-onnx (SupertonicEngine): mô
+///    hình flow int8 ~145MB gắn sẵn, 5 nữ (F1–F5) + 5 nam (M1–M5),
+///    lang "vi". Kỳ vọng nhanh hơn thời gian thực nhiều lần; chất giọng
+///    tiếng Việt là thứ bản thử này cần anh nghe để quyết định.
+/// synthesizeSync luôn trả WAV PCM16 nên NativePlayer/RenderStore/
+/// BookRenderer không đổi.
 final class TtsServer {
     static let shared = TtsServer()
 
-    /// 4 giọng VieNeu Turbo của bản 3.1.0 (Bắc/Nam × nam/nữ). Phải khớp
-    /// voices.json. Mọi id khác (giọng VieNeu ngoài bộ 4, "default", id
-    /// giọng hệ thống) đều đi đường giọng hệ thống.
-    static let vieneuVoices = ["Trúc Ly", "Hải Đăng", "Thùy Dung", "Thái Sơn"]
+    /// 10 giọng Supertonic: id -> (tên hiển thị, sid trong voice.bin).
+    /// sid 0–4 = F1–F5 (nữ), 5–9 = M1–M5 (nam) theo đúng thứ tự gói của
+    /// sherpa-onnx. Phải khớp voices.json.
+    static let supertonicPresets: [(id: String, name: String, sid: Int32)] = [
+        ("supertonic/F1", "Nữ 1 (Supertonic)", 0),
+        ("supertonic/F2", "Nữ 2 (Supertonic)", 1),
+        ("supertonic/F3", "Nữ 3 (Supertonic)", 2),
+        ("supertonic/F4", "Nữ 4 (Supertonic)", 3),
+        ("supertonic/F5", "Nữ 5 (Supertonic)", 4),
+        ("supertonic/M1", "Nam 1 (Supertonic)", 5),
+        ("supertonic/M2", "Nam 2 (Supertonic)", 6),
+        ("supertonic/M3", "Nam 3 (Supertonic)", 7),
+        ("supertonic/M4", "Nam 4 (Supertonic)", 8),
+        ("supertonic/M5", "Nam 5 (Supertonic)", 9),
+    ]
 
-    static func isVieNeu(_ voice: String) -> Bool { vieneuVoices.contains(voice) }
+    static func isSupertonic(_ voice: String) -> Bool {
+        supertonicPresets.contains { $0.id == voice }
+    }
+
+    static func supertonicSid(_ voice: String) -> Int32? {
+        supertonicPresets.first { $0.id == voice }?.sid
+    }
 
     // MARK: - Giọng hệ thống iOS
 
@@ -61,31 +77,20 @@ final class TtsServer {
     private let synthQueue = DispatchQueue(label: "app.sachnoi.systemtts", qos: .userInitiated)
     private let synthesizer = AVSpeechSynthesizer()
 
-    // MARK: - Hồ engine VieNeu Turbo (1.9.5)
+    // MARK: - Engine Supertonic (một bản duy nhất, nối tiếp)
 
-    private let maxEngines: Int
-    private let poolLock = NSLock()
-    private var idleEngines: [VieNeuEngine] = []
-    private var totalEngines = 0
+    // sherpa-onnx không an toàn đa luồng -> MỌI lần sinh Supertonic (tầng
+    // phát + renderer) đều nối tiếp qua hàng đợi này. Engine dựng LƯỜI ở
+    // lần gọi đầu tiên và giữ thường trực: khác hồ Turbo ngày trước,
+    // Supertonic là cửa duy nhất cho 10 giọng này và việc nghe nền cần nó
+    // sống khi app ở nền (sinh theo yêu cầu của tầng phát, chu kỳ thấp).
+    private let superQueue = DispatchQueue(label: "app.sachnoi.supertonic", qos: .userInitiated)
+    private var superEngine: SupertonicEngine?
 
-    private init() {
-        maxEngines = ProcessInfo.processInfo.physicalMemory >= 3_000_000_000 ? 2 : 1
-        // 3.2.1: vòng đời hồ engine theo vòng đời app — vào nền/cảnh báo
-        // bộ nhớ thì xả hồ (nhả RAM cho tầng phát), quay lại tiền cảnh thì
-        // cho phép giữ hồ trở lại.
-        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
-            self?.drainPool()
-        }
-        NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: nil) { [weak self] _ in
-            self?.drainPool()
-        }
-        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
-            self?.refillPoolAllowed()
-        }
-    }
+    private init() {}
 
-    /// Khoảng lặng tại dấu câu do người dùng đặt — engine Turbo áp bên
-    /// trong; đường hệ thống do NativePlayer áp giữa các đoạn khi phát.
+    /// Khoảng lặng tại dấu câu do người dùng đặt — NativePlayer áp giữa
+    /// các đoạn khi phát (mọi engine).
     var punctPauseSeconds: Double = 0.3
     var paraPauseSeconds: Double = 0.7
 
@@ -93,11 +98,10 @@ final class TtsServer {
         case notStarted, loading, ready, failed(String)
     }
     private let stateLock = NSLock()
-    private var turboState: EngineState = .notStarted
+    private var superState: EngineState = .notStarted
     private var systemState: EngineState = .notStarted
     private var lastEngineError: String?
     private var initStepsText = ""
-    private var voiceStore: VoiceStore?
 
     // Thống kê tốc độ tổng hợp cho tab Chẩn đoán (giữ tên khoá như cũ).
     private var synthLastMs = 0
@@ -106,20 +110,17 @@ final class TtsServer {
     private var synthSteps = ""
     private var synthEngine = ""
 
-    private func setTurboState(_ v: EngineState) { stateLock.lock(); turboState = v; stateLock.unlock() }
+    private func setSuperState(_ v: EngineState) { stateLock.lock(); superState = v; stateLock.unlock() }
     private func setEngineError(_ v: String?) { stateLock.lock(); lastEngineError = v; stateLock.unlock() }
 
     func start() {
         warmup()
     }
 
-    /// Nạp ấm ở nền ngay khi app mở: CHỈ giọng hệ thống (nhẹ, là mặc định).
-    /// 3.2.1: KHÔNG dựng hồ Turbo lúc mở app nữa — 2 engine ONNX giữ hàng
-    /// trăm MB RAM thường trực dù người dùng không hề chọn giọng VieNeu,
-    /// và khi app vào nền iOS siết bộ nhớ gắt -> jetsam giết app (máy thật
-    /// 3.2.0: văng app + mất chạy nền). Hồ chỉ dựng LƯỜI khi có yêu cầu
-    /// giọng VieNeu thật (acquireEngine tự dựng), và bị XẢ khi app vào
-    /// nền hoặc hệ thống cảnh báo bộ nhớ (xem drainPool).
+    /// Nạp ấm ở nền ngay khi app mở: CHỈ giọng hệ thống (nhẹ, là mặc
+    /// định). Engine Supertonic dựng lười ở lần chọn giọng đầu tiên —
+    /// không giữ ~145MB model thường trực cho người chỉ nghe giọng hệ
+    /// thống (bài học jetsam của hồ Turbo ở 3.2.0).
     func warmup() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
@@ -127,129 +128,63 @@ final class TtsServer {
         }
     }
 
-    /// Xả hồ engine Turbo: huỷ mọi engine đang rảnh và cấm giữ lại engine
-    /// vừa dùng xong (releaseEngine thả rơi thay vì cất hồ) cho tới khi
-    /// app quay lại tiền cảnh. Engine đang bận tổng hợp thì dùng xong tự
-    /// rơi. Gọi khi app vào nền + khi iOS cảnh báo bộ nhớ.
-    private var poolDrained = false
-    func drainPool() {
-        poolLock.lock()
-        poolDrained = true
-        totalEngines -= idleEngines.count
-        idleEngines.removeAll()
-        poolLock.unlock()
-    }
+    // MARK: - Supertonic
 
-    func refillPoolAllowed() {
-        poolLock.lock()
-        poolDrained = false
-        poolLock.unlock()
-    }
-
-    // MARK: - VieNeu Turbo
-
-    func assetsURL() throws -> URL {
-        guard let assets = PackStore.vieneuAssetsURL() else {
-            throw VieNeuEngine.EngineError.asset("TTSAssets (chưa tải gói core VieNeu)")
+    /// Engine dùng chung, dựng một lần. PHẢI gọi trên superQueue.
+    private func engineLocked() throws -> SupertonicEngine {
+        if let superEngine { return superEngine }
+        stateLock.lock()
+        if case .failed(let msg) = superState {
+            stateLock.unlock()
+            throw SupertonicEngine.EngineError.asset("engine lỗi: \(msg)")
         }
-        return assets
-    }
-
-    /// Danh sách giọng Turbo đọc thẳng từ file preset — không cần dựng engine.
-    func getVoiceStore() throws -> VoiceStore {
-        if let voiceStore { return voiceStore }
-        let store = try VoiceStore(url: assetsURL().appendingPathComponent("voices_v3_turbo.json"))
-        voiceStore = store
-        return store
-    }
-
-    private func makeEngine() throws -> VieNeuEngine {
-        setTurboState(.loading)
+        stateLock.unlock()
+        setSuperState(.loading)
+        let t0 = Date()
         do {
-            let created = try VieNeuEngine(assetsDir: assetsURL())
-            setTurboState(.ready)
-            stateLock.lock(); initStepsText = VieNeuEngine.lastInitSteps; stateLock.unlock()
+            guard let assets = PackStore.supertonicAssetsURL() else {
+                throw SupertonicEngine.EngineError.asset("SupertonicAssets (chưa gắn sẵn trong app)")
+            }
+            let created = try SupertonicEngine(assetsDir: assets)
+            superEngine = created
+            setSuperState(.ready)
+            stateLock.lock()
+            initStepsText = "dựng engine Supertonic trong \(Int(Date().timeIntervalSince(t0) * 1000))ms · \(created.numSpeakers) giọng · \(created.sampleRate)Hz"
+            stateLock.unlock()
             setEngineError(nil)
             return created
         } catch {
-            setTurboState(.failed(error.localizedDescription))
-            stateLock.lock(); initStepsText = VieNeuEngine.lastInitSteps; stateLock.unlock()
+            setSuperState(.failed(error.localizedDescription))
             setEngineError(error.localizedDescription)
             throw error
         }
     }
 
-    private func acquireEngine() throws -> VieNeuEngine {
-        let deadline = Date().addingTimeInterval(30)
-        while true {
-            poolLock.lock()
-            if let e = idleEngines.popLast() { poolLock.unlock(); return e }
-            if totalEngines < maxEngines {
-                totalEngines += 1
-                poolLock.unlock()
-                do { return try makeEngine() }
-                catch {
-                    poolLock.lock(); totalEngines -= 1; poolLock.unlock()
-                    throw error
-                }
-            }
-            poolLock.unlock()
-            stateLock.lock()
-            if case .failed(let msg) = turboState {
-                stateLock.unlock()
-                throw VieNeuEngine.EngineError.asset("engine lỗi: \(msg)")
-            }
-            stateLock.unlock()
-            if Date() > deadline { throw VieNeuEngine.EngineError.asset("engine chưa sẵn sàng sau 30s") }
-            Thread.sleep(forTimeInterval: 0.05)
+    private func synthesizeSupertonic(text: String, voice: String) throws -> Data {
+        guard let sid = Self.supertonicSid(voice) else {
+            throw SupertonicEngine.EngineError.asset("không rõ giọng Supertonic: \(voice)")
         }
-    }
-
-    private func releaseEngine(_ e: VieNeuEngine) {
-        poolLock.lock()
-        if poolDrained {
-            // Hồ đang xả (app ở nền / thiếu bộ nhớ): thả rơi engine thay vì
-            // giữ lại — nhả RAM ngay. Lần cần tới acquireEngine dựng mới.
-            totalEngines -= 1
-            poolLock.unlock()
-            return
-        }
-        idleEngines.append(e)
-        poolLock.unlock()
-    }
-
-    // MARK: - Tổng hợp (định tuyến theo giọng)
-
-    func synthesizeSync(text: String, voice: String) throws -> Data {
-        if Self.isVieNeu(voice) {
-            return try synthesizeTurbo(text: text, voice: voice)
-        }
-        return try synthQueue.sync { try synthesizeSystem(text: text, voice: voice) }
-    }
-
-    private func synthesizeTurbo(text: String, voice: String) throws -> Data {
         let t0 = Date()
-        let engine = try acquireEngine()
-        let data: Data
-        do {
-            data = try engine.synthesize(text: text, voiceName: voice,
-                                         punctPause: punctPauseSeconds, paraPause: paraPauseSeconds)
-        } catch {
-            releaseEngine(engine)
-            throw error
-        }
-        releaseEngine(engine)
+        let data = try superQueue.sync { try engineLocked().synthesize(text, sid: sid) }
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         stateLock.lock()
         synthLastMs = ms
         synthLastChars = text.count
         synthAvgMs = synthAvgMs == 0 ? ms : (synthAvgMs * 3 + ms) / 4
-        synthEngine = "turbo"
-        synthSteps = VieNeuEngine.lastSynthSteps
-        let seconds = Double(max(0, data.count - 44)) / 2.0 / Double(VieNeuEngine.sampleRate)
-        synthSteps += " · wav \(String(format: "%.1f", seconds))s"
+        synthEngine = "supertonic"
+        let seconds = Double(max(0, data.count - 44)) / 2.0 / 44100.0
+        synthSteps = "supertonic sid \(sid) · wav \(String(format: "%.1f", seconds))s"
         stateLock.unlock()
         return data
+    }
+
+    // MARK: - Tổng hợp (định tuyến theo giọng)
+
+    func synthesizeSync(text: String, voice: String) throws -> Data {
+        if Self.isSupertonic(voice) {
+            return try synthesizeSupertonic(text: text, voice: voice)
+        }
+        return try synthQueue.sync { try synthesizeSystem(text: text, voice: voice) }
     }
 
     private func synthesizeSystem(text: String, voice: String) throws -> Data {
@@ -348,29 +283,22 @@ final class TtsServer {
             case .failed(let m): return "failed: \(m)"
             }
         }
-        let turboText = text(turboState)
+        let superText = text(superState)
         let systemText = text(systemState)
         stateLock.unlock()
-        poolLock.lock()
-        let poolTotal = totalEngines, poolIdle = idleEngines.count
-        poolLock.unlock()
 
         var assetsFound = false
         var missing: [String] = []
-        if let assets = PackStore.vieneuAssetsURL() {
+        if let assets = PackStore.supertonicAssetsURL() {
             assetsFound = true
-            let expected = ["config.json", "heads.bin", "heads.json", "tokenizer.json", "sea_g2p.bin",
-                            "voices_v3_turbo.json", "vieneu_prefill.onnx", "vieneu_decode_step.onnx",
-                            "vieneu_acoustic_cached.onnx", "vieneu_backbone_shared.data",
-                            "moss_audio_tokenizer_decode_full.onnx", "moss_audio_tokenizer_decode_shared.data"]
-            for name in expected where !FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
+            for name in SupertonicEngine.assetFiles where !FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
                 missing.append(name)
             }
         }
         let voices = Self.vietnameseVoices()
         var info: [String: Any] = [
-            "engine": turboText,
-            "engineKind": "giọng hệ thống iOS (mặc định) + vieneu-turbo (4 giọng) + render trước cả cuốn",
+            "engine": superText,
+            "engineKind": "giọng hệ thống iOS (mặc định) + supertonic-3 (10 giọng, sherpa-onnx) + render trước cả cuốn",
             "lastSynthEngine": sEngine,
             "systemEngine": systemText,
             "systemVoices": voices.map { "\($0.name) (q\($0.quality.rawValue))" }.joined(separator: " · "),
@@ -382,7 +310,6 @@ final class TtsServer {
             "synthLastChars": sChars,
             "synthAvgMs": sAvg,
             "synthSteps": sSteps,
-            "engines": "\(poolTotal)/\(maxEngines) (rảnh \(poolIdle))",
             "thermal": ProcessInfo.processInfo.thermalState.rawValue,
         ]
         for (k, v) in BookRenderer.shared.stats() { info[k] = v }

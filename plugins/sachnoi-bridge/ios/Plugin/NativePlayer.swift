@@ -105,12 +105,13 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    /// Khoá giọng cho địa chỉ đoạn: VieNeu dùng "vieneu/<tên>"; giọng hệ
-    /// thống dùng identifier iOS đã phân giải (đổi bản giọng trong Cài
-    /// đặt iOS -> identifier đổi -> địa chỉ đổi -> tự render lại).
+    /// Khoá giọng cho địa chỉ đoạn: Supertonic dùng chính id giọng
+    /// ("supertonic/F1"... — ổn định giữa các lần mở app); giọng hệ thống
+    /// dùng identifier iOS đã phân giải (đổi bản giọng trong Cài đặt iOS
+    /// -> identifier đổi -> địa chỉ đổi -> tự render lại).
     private var voiceKey: String {
-        TtsServer.isVieNeu(voice)
-            ? "vieneu/\(voice)"
+        TtsServer.isSupertonic(voice)
+            ? voice
             : (TtsServer.resolveSystemVoice(voice)?.identifier ?? "system")
     }
 
@@ -125,7 +126,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     /// nội dung từng đoạn; renderKey chỉ còn là nhãn chẩn đoán.
     private func rekeyRenderer(playIndex: Int) {
         let vk = voiceKey
-        let synthVoice = TtsServer.isVieNeu(voice) ? voice : vk
+        let synthVoice = TtsServer.isSupertonic(voice) ? voice : vk
         renderKey = bookId.isEmpty ? "" : RenderStore.key(
             bookId: bookId, voice: vk,
             gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph)

@@ -53,8 +53,8 @@ public class SachNoiBridgePlugin: CAPPlugin {
             self?.notifyListeners("packFileFinished", data: ["packId": packId, "name": name, "error": error ?? ""])
         }
         dl.onPackFinished = { [weak self] packId in
-            // Gói core vừa tải xong -> nạp engine ngay để bấm Nghe là có tiếng
-            if packId.hasPrefix("vieneu-") { TtsServer.shared.warmup() }
+            // Gói core vừa tải xong -> nạp ấm ngay để bấm Nghe là có tiếng
+            if packId.hasPrefix("supertonic-") { TtsServer.shared.warmup() }
             self?.notifyListeners("packDownloadFinished", data: ["packId": packId])
         }
     }
@@ -88,7 +88,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
             "backgroundAudio": true,
             "backgroundDownloads": true,
             "coreInstalled": true,
-            "coreBundled": Bundle.main.url(forResource: "TTSAssets", withExtension: nil) != nil,
+            "coreBundled": Bundle.main.url(forResource: "SupertonicAssets", withExtension: nil) != nil,
             "manifestUpdateAvailable": BackgroundTasks.availableManifestVersion() ?? "",
         ])
     }
@@ -117,16 +117,13 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     // MARK: - TTS
     @objc func ttsVoices(_ call: CAPPluginCall) {
-        // 3.1.0: giọng hệ thống iOS trước (mặc định, nhẹ), rồi 4 giọng
-        // VieNeu Turbo (Bắc/Nam × nam/nữ) từ file preset — không cần dựng
+        // 3.3.0: giọng hệ thống iOS trước (mặc định, nhẹ), rồi 10 giọng
+        // Supertonic (5 nữ + 5 nam) từ bảng preset tĩnh — không cần dựng
         // engine để liệt kê.
         DispatchQueue.global(qos: .userInitiated).async {
             var voices = TtsServer.shared.systemVoices()
-            if let store = try? TtsServer.shared.getVoiceStore() {
-                let byName = Dictionary(uniqueKeysWithValues: store.presets.map { ($0.name, $0) })
-                voices += TtsServer.vieneuVoices.compactMap { name in
-                    byName[name].map { ["id": $0.name, "name": $0.label, "language": "vi"] }
-                }
+            voices += TtsServer.supertonicPresets.map {
+                ["id": $0.id, "name": $0.name, "language": "vi"]
             }
             if voices.isEmpty {
                 call.reject("Thiết bị chưa có giọng tiếng Việt")
