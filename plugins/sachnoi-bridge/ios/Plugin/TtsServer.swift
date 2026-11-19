@@ -241,6 +241,7 @@ final class TtsServer {
             "synthAvgMs": sAvg,
             "synthSteps": VieNeuEngine.lastSynthSteps,
             "engines": "\(poolTotal)/\(maxEngines) (rảnh \(poolIdle))",
+            "thermal": ProcessInfo.processInfo.thermalState.rawValue,
         ]
     }
 

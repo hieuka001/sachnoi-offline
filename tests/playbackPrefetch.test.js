@@ -69,6 +69,15 @@ test("1.9.5: TtsServer có hồ 2 engine song song, bỏ hàng đợi serial", (
   assert.ok(engine.includes("lastSynthSteps"), "thiếu đo thời gian từng pha (lastSynthSteps)");
 });
 
+test("1.9.6: luồng riêng từng session ONNX + chẩn đoán khung hình/nhiệt", () => {
+  const engine = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/VieNeuEngine.swift"), "utf8");
+  assert.ok(engine.includes('makeSession("vieneu_acoustic_cached.onnx", .all, 1)'), "acoustic phải 1 luồng");
+  assert.ok(engine.includes('makeSession("vieneu_decode_step.onnx", .basic, 2)'), "decode phải 2 luồng");
+  assert.ok(engine.includes("lastFrames"), "thiếu đếm khung hình cho chẩn đoán");
+  const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
+  assert.ok(server.includes("thermalState"), "thiếu trạng thái nhiệt trong chẩn đoán");
+});
+
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
   assert.ok(html.includes("<h3>Giọng VieNeu</h3>"), "tiêu đề Giọng VieNeu phải còn");

@@ -18,6 +18,10 @@ final class VieNeuEngine {
     /// ~13,5s; phải biết pha nào ăn hết thời gian đó mới sửa đúng chỗ.
     static var lastSynthSteps = ""
     private var codecMs = 0
+    /// 1.9.6: số khung hình lần sinh gần nhất + trần khung của nó — để biết
+    /// máy có đang sinh tới trần (lỗi dừng) hay dừng đúng lúc (chỉ chậm).
+    private var lastFrames = 0
+    private var lastFrameCap = 0
 
     enum EngineError: Error, CustomStringConvertible {
         case asset(String)
@@ -100,9 +104,18 @@ final class VieNeuEngine {
         let env = try ORTEnv(loggingLevel: .warning)
         self.env = env
         mark("env")
-        func makeSession(_ name: String, _ level: ORTGraphOptimizationLevel = .all) throws -> ORTSession {
+        // 1.9.6: số luồng RIÊNG từng session. Trước đây cả 4 session đều 4
+        // luồng -> mỗi engine có 4 hồ luồng ORT (hồ 2 engine = 8 hồ, 32
+        // luồng) tranh nhau vài nhân CPU; các hồ luồng của ORT chờ bằng
+        // spin-wait nên tranh chấp làm MỖI lần run chậm đi nhiều lần —
+        // số liệu máy anh: đoạn 62 ký tự tốn 13,2s. Acoustic chạy 16 lần/
+        // khung với việc cực nhỏ (1 lớp, 1 token): 1 luồng là nhanh nhất.
+        // Decode 1 token/bước, nghẽn băng thông nhớ: 2 luồng. Prefill và
+        // codec mỗi đoạn chỉ chạy 1 lần với việc lớn: giữ 4 luồng.
+        func makeSession(_ name: String, _ level: ORTGraphOptimizationLevel = .all,
+                         _ threads: Int32 = 4) throws -> ORTSession {
             let opts = try ORTSessionOptions()
-            try opts.setIntraOpNumThreads(4)
+            try opts.setIntraOpNumThreads(threads)
             try opts.setGraphOptimizationLevel(level)
             return try ORTSession(env: env,
                                   modelPath: assetsDir.appendingPathComponent(name).path,
@@ -111,13 +124,13 @@ final class VieNeuEngine {
         // Hai session backbone dùng chung dữ liệu 99MB: mức .all bắt ORT tối ưu
         // sâu ngay lúc nạp (rất chậm trên model lớn) — .basic nạp nhanh hơn hẳn,
         // hiệu năng suy luận gần như nguyên vẹn với workload này (đợt 29).
-        sessPrefill = try makeSession("vieneu_prefill.onnx", .basic)
+        sessPrefill = try makeSession("vieneu_prefill.onnx", .basic, 4)
         mark("sess-prefill")
-        sessDecode = try makeSession("vieneu_decode_step.onnx", .basic)
+        sessDecode = try makeSession("vieneu_decode_step.onnx", .basic, 2)
         mark("sess-decode")
-        sessAcoustic = try makeSession("vieneu_acoustic_cached.onnx")
+        sessAcoustic = try makeSession("vieneu_acoustic_cached.onnx", .all, 1)
         mark("sess-acoustic")
-        sessCodec = try makeSession("moss_audio_tokenizer_decode_full.onnx")
+        sessCodec = try makeSession("moss_audio_tokenizer_decode_full.onnx", .all, 4)
         mark("sess-codec")
     }
 
@@ -154,7 +167,8 @@ final class VieNeuEngine {
         t = Date()
         let joined = SpeechUtils.joinAudioChunks(wavs, Self.sampleRate, silencePs: silencePs)
         let joinMs = Int(Date().timeIntervalSince(t) * 1000)
-        Self.lastSynthSteps = "phiên âm \(phonMs)ms · sinh \(genMs)ms (codec \(codecTotal)ms) · ghép \(joinMs)ms · \(chunks.count) chunk"
+        let wavSec = Double(joined.count) / Double(Self.sampleRate)
+        Self.lastSynthSteps = "phiên âm \(phonMs)ms · sinh \(genMs)ms (codec \(codecTotal)ms) · ghép \(joinMs)ms · \(chunks.count) chunk · \(lastFrames)/\(lastFrameCap) khung · wav \(String(format: "%.1f", wavSec))s"
         return Self.wavData(joined)
     }
 
@@ -238,6 +252,8 @@ final class VieNeuEngine {
 
         var frames = try genOnce()
         if frames.isEmpty { return [] }
+        lastFrames = frames.count
+        lastFrameCap = maxNewFrames
         var wav = try decodeCodes(frames)
         // Babble guard: chunk ngắn "nói thêm" -> sinh lại tối đa 2 lần, giữ bản tốt hơn.
         var best = SpeechUtils.babbleSuspect(wav, Self.sampleRate, phonemes, maxNewFrames, nFrames: frames.count)
@@ -252,6 +268,7 @@ final class VieNeuEngine {
                 frames = f2
                 wav = w2
                 best = cand
+                lastFrames = f2.count
             }
         }
         return wav
