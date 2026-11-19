@@ -298,7 +298,11 @@ final class TtsServer {
         let voices = Self.vietnameseVoices()
         var info: [String: Any] = [
             "engine": superText,
-            "engineKind": "giọng hệ thống iOS (mặc định) + supertonic-3 (10 giọng, sherpa-onnx) + render trước cả cuốn",
+            // Dùng SupertonicEngine.kind (không ghi cứng): vừa là tên hiển thị
+            // đúng bản thư viện/model đang chạy, vừa giữ chuỗi "Supertonic 3"
+            // sống trong binary (static let không ai tham chiếu sẽ bị Swift
+            // dead-strip ở -O, khiến bước verify IPA của CI tìm không thấy).
+            "engineKind": "giọng hệ thống iOS (mặc định) + \(SupertonicEngine.kind) (10 giọng) + render trước cả cuốn",
             "lastSynthEngine": sEngine,
             "systemEngine": systemText,
             "systemVoices": voices.map { "\($0.name) (q\($0.quality.rawValue))" }.joined(separator: " · "),

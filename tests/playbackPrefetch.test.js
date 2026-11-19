@@ -67,6 +67,10 @@ test("3.3.0: bản thử Supertonic — giọng hệ thống mặc định + Sup
   assert.ok(server.includes("isSupertonic"), "TtsServer thiếu định tuyến isSupertonic");
   assert.ok(server.includes("synthesizeSupertonic"), "TtsServer thiếu đường tổng hợp Supertonic");
   assert.ok(server.includes("SupertonicEngine"), "TtsServer phải dùng SupertonicEngine");
+  // diagnostics() phải tham chiếu SupertonicEngine.kind (không ghi cứng):
+  // static let không ai dùng sẽ bị Swift dead-strip ở -O, khiến bước
+  // verify IPA của CI tìm chuỗi "Supertonic 3" trong binary không thấy.
+  assert.ok(server.includes("SupertonicEngine.kind"), "TtsServer.diagnostics phải dùng SupertonicEngine.kind");
   assert.ok(existsSync(join(pluginDir, "SupertonicEngine.swift")), "SupertonicEngine.swift phải tồn tại ở 3.3.0");
   assert.ok(!existsSync(join(pluginDir, "VieNeuEngine.swift")), "VieNeuEngine phải đã gỡ ở 3.3.0");
   assert.ok(!existsSync(join(pluginDir, "NanoEngine.swift")), "NanoEngine vẫn phải vắng mặt");
