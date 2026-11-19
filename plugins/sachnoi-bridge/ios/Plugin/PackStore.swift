@@ -29,12 +29,21 @@ public enum PackStore {
         try? url.setResourceValues(values)
     }
 
-    /// 2.0.0: assets TTS nay là model Piper GẮN SẴN trong app (thư mục
-    /// PiperAssets). Giữ tên hàm vì BackgroundTasks dùng làm cổng kiểm
-    /// "có TTS thì nạp ấm engine" — không còn gói VieNeu tải về nữa.
+    /// Assets engine Turbo: gói đã tải về (nếu có) trước, không thì bản
+    /// GẮN SẴN trong app (TTSAssets ở bundle, từ 1.0.5).
     public static func vieneuAssetsURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "PiperAssets", withExtension: nil),
-           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("vi_VN-vais1000-medium.onnx").path) {
+        if let bundled = Bundle.main.url(forResource: "TTSAssets", withExtension: nil),
+           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
+            return bundled
+        }
+        return nil
+    }
+
+    /// 2.1.0: assets engine Nano GẮN SẴN trong app (thư mục NanoAssets ở
+    /// bundle) — model flow VieNeu-TTS v3 Nano, mở app là nghe mượt ngay.
+    public static func nanoAssetsURL() -> URL? {
+        if let bundled = Bundle.main.url(forResource: "NanoAssets", withExtension: nil),
+           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
             return bundled
         }
         return nil

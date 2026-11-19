@@ -18,7 +18,7 @@ for (const p of m.packs || []) {
     }
   }
 }
-// 2.0.0: engine Piper gắn sẵn chỉ có 1 giọng — tối thiểu 1 là đủ.
-if ((m.voices || []).length < 1) errors.push(`Danh sách giọng trống`);
+// 2.1.0: thuần VieNeu — 11 giọng Nano + 25 giọng Turbo = 36 giọng gắn sẵn.
+if ((m.voices || []).length < 36) errors.push(`Danh sách giọng thiếu: ${(m.voices || []).length}/36`);
 if (errors.length) { console.error("MANIFEST LỖI:\n- " + errors.join("\n- ")); process.exit(1); }
 console.log(`Manifest OK: ${m.packs.length} gói, ${m.voices.length} giọng, version ${m.version}`);

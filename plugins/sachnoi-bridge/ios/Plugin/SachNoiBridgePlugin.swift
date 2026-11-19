@@ -87,8 +87,8 @@ public class SachNoiBridgePlugin: CAPPlugin {
             "nativePlayer": true,
             "backgroundAudio": true,
             "backgroundDownloads": true,
-            "coreInstalled": Bundle.main.url(forResource: "PiperAssets", withExtension: nil) != nil,
-            "coreBundled": Bundle.main.url(forResource: "PiperAssets", withExtension: nil) != nil,
+            "coreInstalled": PackStore.vieneuAssetsURL() != nil,
+            "coreBundled": Bundle.main.url(forResource: "TTSAssets", withExtension: nil) != nil,
             "manifestUpdateAvailable": BackgroundTasks.availableManifestVersion() ?? "",
         ])
     }
@@ -117,9 +117,20 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     // MARK: - TTS
     @objc func ttsVoices(_ call: CAPPluginCall) {
-        // 2.0.0: model Piper gắn sẵn chỉ có một giọng — trả danh sách tĩnh,
-        // không còn phụ thuộc gói tải hay file preset của VieNeu.
-        call.resolve(["voices": TtsServer.voiceList])
+        // 2.1.0: gộp hai engine VieNeu — 25 giọng Turbo (từ file preset,
+        // không cần dựng engine) + 11 giọng Nano (id "nano/<tên>").
+        DispatchQueue.global(qos: .userInitiated).async {
+            var voices: [[String: String]] = []
+            if let store = try? TtsServer.shared.getVoiceStore() {
+                voices += store.presets.map { ["id": $0.name, "name": $0.label, "language": "vi"] }
+            }
+            voices += TtsServer.shared.nanoVoiceList()
+            if voices.isEmpty {
+                call.reject("Chưa có gói giọng nào trong app")
+            } else {
+                call.resolve(["voices": voices])
+            }
+        }
     }
 
     @objc func ttsSynthesize(_ call: CAPPluginCall) {
@@ -283,8 +294,11 @@ public class SachNoiBridgePlugin: CAPPlugin {
         else if let v = (d["gapSentence"] as? NSNumber)?.doubleValue { s.gapPunct = min(max(0, v), 3) }
         else if let v = (d["gapComma"] as? NSNumber)?.doubleValue { s.gapPunct = min(max(0, v), 3) }
         if let v = (d["gapParagraph"] as? NSNumber)?.doubleValue { s.gapParagraph = min(max(0, v), 5) }
-        // 2.0.0: khoảng nghỉ chỉ do NativePlayer áp giữa các đoạn khi phát;
-        // engine Piper không nhận thông số nghỉ (bản VieNeu cũ có, đã xoá).
+        // Cùng giá trị áp cho khoảng lặng TẠI dấu câu bên trong engine Turbo
+        // (đường nghe thử/tổng hợp cả đoạn) — một cài đặt chi phối tất cả.
+        // NativePlayer cũng áp giữa các đoạn khi phát cho cả hai engine.
+        TtsServer.shared.punctPauseSeconds = s.gapPunct
+        TtsServer.shared.paraPauseSeconds = s.gapParagraph
         return s
     }
 

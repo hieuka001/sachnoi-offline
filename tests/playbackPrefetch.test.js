@@ -58,27 +58,36 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
-test("2.0.0: lõi sherpa-onnx + Piper thay engine VieNeu tự port (đã xoá)", () => {
+test("2.1.0: thuần VieNeu — Nano (mượt) + Turbo (25 giọng), sherpa/Piper đã gỡ", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
-  assert.ok(server.includes("SherpaTtsEngine"), "TtsServer chưa dùng SherpaTtsEngine");
+  assert.ok(server.includes("NanoEngine"), "TtsServer chưa định tuyến engine Nano");
+  assert.ok(server.includes("VieNeuEngine"), "TtsServer thiếu hồ engine Turbo");
+  assert.ok(server.includes("nano/"), "TtsServer thiếu tiền tố định tuyến nano/");
   assert.ok(!server.includes("NWListener"), "TtsServer vẫn còn server HTTP thừa");
-  assert.ok(!server.includes("NWConnection"), "TtsServer vẫn còn xử lý kết nối HTTP thừa");
-  const sherpa = readFileSync(join(pluginDir, "SherpaTts.swift"), "utf8");
-  assert.ok(sherpa.includes("import SherpaOnnxC"), "SherpaTts chưa import SherpaOnnxC");
-  assert.ok(sherpa.includes("SherpaOnnxCreateOfflineTts"), "thiếu gọi tạo engine sherpa");
-  assert.ok(sherpa.includes("SherpaOnnxOfflineTtsGenerate"), "thiếu gọi tổng hợp sherpa");
-  for (const gone of ["VieNeuEngine.swift", "Phonemizer.swift", "SpeechUtils.swift", "SeaG2p.swift", "BpeTokenizer.swift"]) {
-    assert.ok(!existsSync(join(pluginDir, gone)), `${gone} phải đã xoá`);
+  assert.ok(!server.includes("SherpaTts"), "TtsServer vẫn còn sherpa/Piper (2.1.0 thuần VieNeu)");
+  const nano = readFileSync(join(pluginDir, "NanoEngine.swift"), "utf8");
+  assert.ok(nano.includes("vector_estimator.onnx"), "NanoEngine thiếu graph vector_estimator");
+  assert.ok(nano.includes("duration_predictor.onnx"), "NanoEngine thiếu duration_predictor");
+  assert.ok(nano.includes("codec_decoder.onnx"), "NanoEngine thiếu codec_decoder");
+  assert.ok(nano.includes("phonemizeWithEmotions"), "NanoEngine phải dùng chung Phonemizer với Turbo");
+  assert.ok(nano.includes("trimAndFade"), "NanoEngine thiếu trim_and_fade như bản tham chiếu");
+  for (const back of ["VieNeuEngine.swift", "Phonemizer.swift", "SpeechUtils.swift", "SeaG2p.swift", "BpeTokenizer.swift"]) {
+    assert.ok(existsSync(join(pluginDir, back)), `${back} phải được khôi phục cho Turbo`);
   }
+  assert.ok(!existsSync(join(pluginDir, "SherpaTts.swift")), "SherpaTts.swift phải đã xoá");
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
-  assert.ok(podspec.includes("SherpaOnnxC.xcframework"), "podspec chưa khai sherpa xcframework (tên theo framework bên trong)");
-  assert.ok(!podspec.includes("dependency 'onnxruntime-objc'"), "podspec vẫn còn dependency onnxruntime-objc");
+  assert.ok(podspec.includes("dependency 'onnxruntime-objc'"), "podspec thiếu onnxruntime-objc");
+  assert.ok(podspec.includes("libsea_g2p_rs.a"), "podspec thiếu libsea_g2p_rs.a");
+  assert.ok(!podspec.includes("SherpaOnnxC"), "podspec vẫn còn sherpa");
+  const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
+  assert.equal(manifest.voices.length, 36, "manifest phải có 36 giọng (11 Nano + 25 Turbo)");
+  assert.equal(manifest.voices.filter((v) => v.id.startsWith("nano/")).length, 11, "thiếu giọng Nano trong manifest");
 });
 
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
-  assert.ok(html.includes("<h3>Giọng đọc</h3>"), "tiêu đề tab Giọng phải là 'Giọng đọc' (2.0.0: Piper)");
+  assert.ok(html.includes("<h3>Giọng đọc</h3>"), "tiêu đề tab Giọng phải là 'Giọng đọc'");
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const stale = walk(join(root, "web-src"))
