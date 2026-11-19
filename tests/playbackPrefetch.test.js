@@ -91,7 +91,8 @@ test("2.1.1: ctx_mask đi đường uint8 (graph vá vieneu-nano-v2) — cấm q
   // onnxruntime-objc 1.20.0 không tạo được tensor bool: bản 2.1.0 ép
   // rawValue 9 -> máy thật văng 'unsupported tensor element type'.
   assert.ok(nano.includes("uint8Tensor"), "NanoEngine phải tạo ctx_mask bằng uint8Tensor");
-  assert.ok(nano.includes("elementType: .uint8"), "uint8Tensor phải dùng elementType .uint8");
+  assert.ok(nano.includes("elementType: .uInt8"), "uint8Tensor phải dùng elementType .uInt8 (case Swift của ORTTensorElementDataTypeUInt8, rawValue 3)");
+  assert.ok(!nano.includes("elementType: .uint8"), "NanoEngine còn .uint8 — case này không tồn tại trong onnxruntime-objc 1.20.0");
   assert.ok(!nano.includes("boolTensor"), "NanoEngine còn boolTensor (đường bool đã chết trên iOS)");
   assert.ok(!nano.includes("ORTTensorElementDataType(rawValue: 9)"), "NanoEngine còn ép rawValue 9 cho tensor bool");
   const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
