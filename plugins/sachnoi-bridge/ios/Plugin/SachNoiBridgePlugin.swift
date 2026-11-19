@@ -87,7 +87,7 @@ public class SachNoiBridgePlugin: CAPPlugin {
             "nativePlayer": true,
             "backgroundAudio": true,
             "backgroundDownloads": true,
-            "coreInstalled": PackStore.vieneuAssetsURL() != nil,
+            "coreInstalled": true,
             "coreBundled": Bundle.main.url(forResource: "TTSAssets", withExtension: nil) != nil,
             "manifestUpdateAvailable": BackgroundTasks.availableManifestVersion() ?? "",
         ])
@@ -117,18 +117,12 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     // MARK: - TTS
     @objc func ttsVoices(_ call: CAPPluginCall) {
-        // 2.2.0: thuần VieNeu Turbo — chỉ 10 giọng đã chọn cho 3 miền (từ
-        // file preset, không cần dựng engine), đúng thứ tự TtsServer.allowedVoices.
+        // 3.0.0: giọng hệ thống iOS (AVSpeechSynthesizer) — mọi iPhone đều
+        // có sẵn giọng tiếng Việt "Linh", không gói tải, không model trong app.
         DispatchQueue.global(qos: .userInitiated).async {
-            var voices: [[String: String]] = []
-            if let store = try? TtsServer.shared.getVoiceStore() {
-                let byName = Dictionary(uniqueKeysWithValues: store.presets.map { ($0.name, $0) })
-                voices = TtsServer.allowedVoices.compactMap { name in
-                    byName[name].map { ["id": $0.name, "name": $0.label, "language": "vi"] }
-                }
-            }
+            let voices = TtsServer.shared.systemVoices()
             if voices.isEmpty {
-                call.reject("Chưa có gói giọng nào trong app")
+                call.reject("Thiết bị chưa có giọng tiếng Việt")
             } else {
                 call.resolve(["voices": voices])
             }

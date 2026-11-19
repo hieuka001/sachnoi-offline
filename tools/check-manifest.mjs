@@ -18,7 +18,8 @@ for (const p of m.packs || []) {
     }
   }
 }
-// 2.2.0: thuần VieNeu Turbo — đúng 10 giọng đã chọn cho 3 miền (Nano đã bỏ).
-if ((m.voices || []).length !== 10) errors.push(`Danh sách giọng phải đúng 10: đang có ${(m.voices || []).length}`);
+// 3.0.0: giọng hệ thống iOS — đúng 1 giọng "Linh", không còn gói model nào.
+if ((m.voices || []).length !== 1) errors.push(`Danh sách giọng phải đúng 1 (giọng hệ thống): đang có ${(m.voices || []).length}`);
+if ((m.voices || [])[0]?.engine !== "system") errors.push("Giọng duy nhất phải có engine 'system'");
 if (errors.length) { console.error("MANIFEST LỖI:\n- " + errors.join("\n- ")); process.exit(1); }
 console.log(`Manifest OK: ${m.packs.length} gói, ${m.voices.length} giọng, version ${m.version}`);

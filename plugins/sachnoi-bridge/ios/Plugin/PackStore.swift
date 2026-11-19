@@ -1,11 +1,10 @@
 import Foundation
 import CryptoKit
 
-/// PackStore — nơi lưu các gói tải về (core engine + từng giọng) trên máy.
-/// Từ 1.0.5: core VieNeu Turbo int8 (260MB) GẮN SẴN trong app (TTSAssets ở
-/// bundle, xem vieneuAssetsURL) — mở app là nghe ngay. Các gói khác vẫn tải từ
-/// GitHub Releases về Application Support/SachNoi/TTSPacks/<packId>/ — iOS
-/// không tự xoá thư mục này như Caches, và đã tắt backup iCloud.
+/// PackStore — tiện ích kho đĩa dùng chung (sanitize/sha256/dung lượng).
+/// 3.0.0: app không còn gói model nào (giọng hệ thống iOS lo phần đọc);
+/// thư mục TTSPacks chỉ còn là di sản của các bản cũ trên máy người dùng.
+/// Kho render trước nằm ở SachNoi/TTSRender (xem RenderStore).
 public enum PackStore {
     public static var rootURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -27,16 +26,6 @@ public enum PackStore {
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try? url.setResourceValues(values)
-    }
-
-    /// Assets engine Turbo: gói đã tải về (nếu có) trước, không thì bản
-    /// GẮN SẴN trong app (TTSAssets ở bundle, từ 1.0.5).
-    public static func vieneuAssetsURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "TTSAssets", withExtension: nil),
-           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
-            return bundled
-        }
-        return nil
     }
 
     public static func installedPacks() -> [[String: Any]] {

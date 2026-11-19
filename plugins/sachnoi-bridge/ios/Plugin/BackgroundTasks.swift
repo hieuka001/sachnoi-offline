@@ -73,8 +73,8 @@ public enum BackgroundTasks {
                 if finished { return }
                 _ = pack
             }
-            // 2) Nạp ấm engine nếu core đã tải — lần nghe sau nhanh hơn
-            if PackStore.vieneuAssetsURL() != nil, !finished {
+            // 2) Nạp ấm giọng hệ thống — lần nghe sau nhanh hơn
+            if !finished {
                 TtsServer.shared.warmup()
             }
             if !finished { task.setTaskCompleted(success: true) }

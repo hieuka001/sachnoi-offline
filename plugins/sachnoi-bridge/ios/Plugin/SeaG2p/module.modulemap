@@ -1,4 +1,0 @@
-module SeaG2p {
-  header "sea_g2p.h"
-  export *
-}
