@@ -58,38 +58,55 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
-test("3.0.0: bỏ toàn bộ VieNeu — engine duy nhất là giọng hệ thống iOS", () => {
+test("3.1.0: lai — giọng hệ thống mặc định + engine VieNeu Turbo cho 4 giọng", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
-  assert.ok(server.includes("AVSpeechSynthesizer"), "TtsServer phải dùng AVSpeechSynthesizer (giọng hệ thống)");
-  assert.ok(server.includes("synthesizer.write"), "TtsServer phải render qua AVSpeechSynthesizer.write");
-  assert.ok(server.includes("vietnameseVoices"), "TtsServer thiếu liệt kê giọng tiếng Việt hệ thống");
-  assert.ok(server.includes("resolveSystemVoice"), "TtsServer thiếu resolveSystemVoice (id lạ -> giọng hệ thống)");
-  for (const gone of ["VieNeuEngine.swift", "NanoEngine.swift", "Phonemizer.swift", "SpeechUtils.swift", "BpeTokenizer.swift", "SeaG2p.swift", "SherpaTts.swift"]) {
-    assert.ok(!existsSync(join(pluginDir, gone)), `${gone} phải đã xoá ở 3.0.0`);
-  }
-  assert.ok(!server.includes("VieNeuEngine"), "TtsServer vẫn còn VieNeuEngine");
+  assert.ok(server.includes("AVSpeechSynthesizer"), "TtsServer phải có giọng hệ thống (AVSpeechSynthesizer)");
+  assert.ok(server.includes("synthesizer.write"), "TtsServer phải render giọng hệ thống qua AVSpeechSynthesizer.write");
+  assert.ok(server.includes("vieneuVoices"), "TtsServer thiếu danh sách 4 giọng VieNeu");
+  assert.ok(server.includes("isVieNeu"), "TtsServer thiếu định tuyến isVieNeu");
+  assert.ok(server.includes("synthesizeTurbo"), "TtsServer thiếu đường tổng hợp Turbo");
+  assert.ok(server.includes("VieNeuEngine"), "TtsServer phải dùng lại VieNeuEngine cho 4 giọng");
+  assert.ok(existsSync(join(pluginDir, "VieNeuEngine.swift")), "VieNeuEngine.swift phải được khôi phục ở 3.1.0");
+  assert.ok(!existsSync(join(pluginDir, "NanoEngine.swift")), "NanoEngine vẫn phải vắng mặt (Nano đã bỏ)");
+  assert.ok(!existsSync(join(pluginDir, "SherpaTts.swift")), "SherpaTts vẫn phải vắng mặt");
   assert.ok(!server.includes("NWListener"), "TtsServer vẫn còn server HTTP thừa");
   const packStore = readFileSync(join(pluginDir, "PackStore.swift"), "utf8");
-  assert.ok(!packStore.includes("vieneuAssetsURL"), "PackStore vẫn còn vieneuAssetsURL");
+  assert.ok(packStore.includes("vieneuAssetsURL"), "PackStore phải có lại vieneuAssetsURL");
   assert.ok(!packStore.includes("nanoAssetsURL"), "PackStore vẫn còn nanoAssetsURL");
   const plugin = readFileSync(join(pluginDir, "SachNoiBridgePlugin.swift"), "utf8");
-  assert.ok(plugin.includes("systemVoices"), "plugin ttsVoices phải trả giọng hệ thống");
-  assert.ok(!plugin.includes("getVoiceStore"), "plugin vẫn còn getVoiceStore của VieNeu");
+  assert.ok(plugin.includes("systemVoices"), "plugin ttsVoices phải liệt kê giọng hệ thống");
+  assert.ok(plugin.includes("getVoiceStore"), "plugin ttsVoices phải liệt kê thêm 4 giọng VieNeu");
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
-  assert.ok(!podspec.includes("onnxruntime"), "podspec vẫn còn onnxruntime-objc");
-  assert.ok(!podspec.includes("sea_g2p"), "podspec vẫn còn libsea_g2p_rs");
+  assert.ok(podspec.includes("onnxruntime"), "podspec phải có lại onnxruntime-objc cho Turbo");
+  assert.ok(podspec.includes("sea_g2p"), "podspec phải có lại libsea_g2p_rs");
   assert.ok(!podspec.includes("SherpaOnnxC"), "podspec vẫn còn sherpa");
   const pbx = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
-  assert.ok(!pbx.includes("TTSAssets"), "pbxproj vẫn còn TTSAssets");
+  assert.ok(pbx.includes("TTSAssets"), "pbxproj phải có lại TTSAssets (core Turbo gắn sẵn)");
   assert.ok(!pbx.includes("NanoAssets"), "pbxproj vẫn còn NanoAssets");
 });
 
-test("3.0.0: manifest chỉ còn giọng hệ thống, không gói model", () => {
+test("3.1.0: đúng 4 giọng VieNeu Bắc/Nam x nam/nữ + 1 giọng hệ thống — manifest khớp Swift", () => {
   const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
-  assert.equal(manifest.voices.length, 1, "manifest phải có đúng 1 giọng hệ thống");
-  assert.equal(manifest.voices[0].engine, "system", "giọng duy nhất phải là engine system");
-  assert.equal(manifest.packs.length, 0, "manifest không được còn gói model nào");
+  assert.equal(manifest.voices.length, 5, "manifest phải có 5 giọng (1 hệ thống + 4 VieNeu)");
+  const system = manifest.voices.filter(v => v.engine === "system");
+  assert.equal(system.length, 1, "phải có đúng 1 giọng hệ thống");
+  assert.equal(system[0].id, "Linh");
+  const turbo = manifest.voices.filter(v => v.engine === "vieneu-turbo");
+  assert.equal(turbo.length, 4, "phải có đúng 4 giọng VieNeu");
+  const matrix = Object.fromEntries(turbo.map(v => [v.id, `${v.region}|${v.gender}`]));
+  assert.deepEqual(matrix, {
+    "Trúc Ly": "Miền Bắc|Nữ",
+    "Hải Đăng": "Miền Bắc|Nam",
+    "Thùy Dung": "Miền Nam|Nữ",
+    "Thái Sơn": "Miền Nam|Nam",
+  }, "4 giọng phải phủ Bắc/Nam x nam/nữ");
+  const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
+  for (const name of Object.keys(matrix)) {
+    assert.ok(server.includes(`"${name}"`), `TtsServer.vieneuVoices thiếu "${name}"`);
+  }
+  const pack = manifest.packs.find(p => p.id === "vieneu-turbo-int8");
+  assert.ok(pack && pack.status === "available", "gói vieneu-turbo-int8 phải available");
 });
 
 test("2.2.0/3.0.0: render trước cả cuốn — RenderStore + BookRenderer + NativePlayer đọc từ file", () => {

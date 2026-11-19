@@ -34,6 +34,50 @@ jobs:
       - name: Build web (đóng kèm trong app — app chạy offline, không nạp web từ xa)
         run: npm run build:web
 
+      # 2.1.0: THUẦN VieNeu — sea-g2p (bộ phiên âm tiếng Việt, Rust) dùng
+      # cho engine Turbo -> thư viện tĩnh .a cho iOS qua
+      # C ABI, ghim đúng commit bản 0.10.0 như pipeline đã kiểm chứng.
+      - name: Build sea-g2p static library (Rust C ABI)
+        run: |
+          which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup target add aarch64-apple-ios
+          git clone https://github.com/pnnbao97/sea-g2p.git /tmp/sea-g2p
+          cd /tmp/sea-g2p
+          git checkout e825173f235d08ea19315b2b279fb11153b44cea
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("Cargo.toml")
+          t = p.read_text()
+          assert 'crate-type = ["cdylib", "rlib"]' in t
+          p.write_text(t.replace('crate-type = ["cdylib", "rlib"]',
+                                 'crate-type = ["cdylib", "rlib", "staticlib"]'))
+          PY
+          cargo build --release --no-default-features --features capi --target aarch64-apple-ios
+          mkdir -p "$GITHUB_WORKSPACE/plugins/sachnoi-bridge/ios/Plugin/vendor"
+          cp target/aarch64-apple-ios/release/libsea_g2p_rs.a \
+             "$GITHUB_WORKSPACE/plugins/sachnoi-bridge/ios/Plugin/vendor/"
+          ls -lh "$GITHUB_WORKSPACE/plugins/sachnoi-bridge/ios/Plugin/vendor/"
+
+      # Core VieNeu Turbo int8 GẮN SẴN (từ 1.0.5, theo yêu cầu người dùng):
+      # assets từ Release core-vieneu-turbo-int8-v1 + kiểm SHA-256 theo
+      # voices/voices.json.
+      - name: Fetch bundled Turbo core (Release + SHA-256)
+        run: |
+          mkdir -p ios/App/App/TTSAssets
+          python3 - <<'PY'
+          import json, pathlib
+          m = json.loads(pathlib.Path("voices/voices.json").read_text())
+          pack = next(p for p in m["packs"] if p["id"] == "vieneu-turbo-int8")
+          lines = [f"{f['sha256']}  ios/App/App/TTSAssets/{f['name']}" for f in pack["files"]]
+          pathlib.Path("/tmp/tts-sha.txt").write_text("\n".join(lines) + "\n")
+          pathlib.Path("/tmp/tts-urls.txt").write_text("\n".join(f["url"] for f in pack["files"]) + "\n")
+          print(f"{len(lines)} files")
+          PY
+          while read -r url; do curl -fL --retry 3 -o "ios/App/App/TTSAssets/$(basename "$url")" "$url"; done < /tmp/tts-urls.txt
+          shasum -a 256 -c /tmp/tts-sha.txt
+          du -sh ios/App/App/TTSAssets
+
       - name: Sync Capacitor iOS (incl. pod install)
         run: npx cap sync ios
 
@@ -57,12 +101,14 @@ jobs:
           echo "--- UIBackgroundModes (phải có audio + processing) ---"
           /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :BGTaskSchedulerPermittedIdentifiers" "$APP_PATH/Info.plist"
-          echo "--- 3.0.0 NHẸ: IPA KHÔNG được còn TTSAssets (không model trong app) ---"
-          test ! -e "$APP_PATH/TTSAssets" || { echo "LỖI: IPA vẫn còn TTSAssets — bản 3.0.0 dùng giọng hệ thống iOS"; exit 1; }
-          strings "$APP_PATH/App" | grep -m1 "AVSpeechSynthesizer" || { echo "LỖI: binary không có AVSpeechSynthesizer"; exit 1; }
-          echo "--- 2.2.0: IPA KHÔNG được còn NanoAssets; binary phải có kho render trước ---"
-          test ! -e "$APP_PATH/NanoAssets" || { echo "LỖI: IPA vẫn còn NanoAssets — bản 2.2.0 đã bỏ Nano"; exit 1; }
+          echo "--- Kiểm tra model gắn sẵn: PHẢI có TTSAssets đủ 12 file (Turbo) ---"
+          test -f "$APP_PATH/TTSAssets/config.json" || { echo "LỖI: IPA thiếu TTSAssets — bản 2.1.0 phải gắn sẵn core Turbo"; exit 1; }
+          ls "$APP_PATH/TTSAssets" | wc -l
+          du -sh "$APP_PATH/TTSAssets"
+          echo "--- 3.1.0: IPA KHÔNG được còn NanoAssets; binary phải có cả giọng hệ thống + kho render ---"
+          test ! -e "$APP_PATH/NanoAssets" || { echo "LỖI: IPA vẫn còn NanoAssets — Nano đã bỏ từ 2.2.0"; exit 1; }
           strings "$APP_PATH/App" | grep -m1 "TTSRender" || { echo "LỖI: binary không có RenderStore (render trước)"; exit 1; }
+          strings "$APP_PATH/App" | grep -m1 "AVSpeechSynthesizer" || { echo "LỖI: binary không có AVSpeechSynthesizer (giọng hệ thống)"; exit 1; }
           du -sh "$APP_PATH"
           rm -rf Payload && mkdir Payload
           cp -R "$APP_PATH" Payload/

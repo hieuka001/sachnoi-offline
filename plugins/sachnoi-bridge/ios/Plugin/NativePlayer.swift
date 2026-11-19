@@ -101,10 +101,14 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     /// Khoá render hiện tại theo (sách, giọng, khoảng nghỉ) + gắn renderer.
-    /// 3.0.0: giọng = identifier giọng hệ thống iOS đã phân giải (đổi bản
-    /// giọng trong Cài đặt iOS -> identifier đổi -> tự render lại).
+    /// 3.1.0: giọng VieNeu dùng tên giọng làm khoá; giọng hệ thống dùng
+    /// identifier iOS đã phân giải (đổi bản giọng trong Cài đặt iOS ->
+    /// identifier đổi -> tự render lại).
     private func rekeyRenderer(playIndex: Int) {
-        let resolved = TtsServer.resolveSystemVoice(voice)?.identifier ?? "system"
+        let resolved = TtsServer.isVieNeu(voice)
+            ? "vieneu/\(voice)"
+            : (TtsServer.resolveSystemVoice(voice)?.identifier ?? "system")
+        let synthVoice = TtsServer.isVieNeu(voice) ? voice : resolved
         renderKey = bookId.isEmpty ? "" : RenderStore.key(
             bookId: bookId, voice: resolved,
             gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph)
@@ -112,7 +116,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         BookRenderer.shared.configure(
             key: renderKey,
             items: items.map { (text: $0.text, chapter: $0.chapter) },
-            voice: resolved,
+            voice: synthVoice,
             playIndex: playIndex)
     }
 

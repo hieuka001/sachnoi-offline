@@ -117,10 +117,17 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     // MARK: - TTS
     @objc func ttsVoices(_ call: CAPPluginCall) {
-        // 3.0.0: giọng hệ thống iOS (AVSpeechSynthesizer) — mọi iPhone đều
-        // có sẵn giọng tiếng Việt "Linh", không gói tải, không model trong app.
+        // 3.1.0: giọng hệ thống iOS trước (mặc định, nhẹ), rồi 4 giọng
+        // VieNeu Turbo (Bắc/Nam × nam/nữ) từ file preset — không cần dựng
+        // engine để liệt kê.
         DispatchQueue.global(qos: .userInitiated).async {
-            let voices = TtsServer.shared.systemVoices()
+            var voices = TtsServer.shared.systemVoices()
+            if let store = try? TtsServer.shared.getVoiceStore() {
+                let byName = Dictionary(uniqueKeysWithValues: store.presets.map { ($0.name, $0) })
+                voices += TtsServer.vieneuVoices.compactMap { name in
+                    byName[name].map { ["id": $0.name, "name": $0.label, "language": "vi"] }
+                }
+            }
             if voices.isEmpty {
                 call.reject("Thiết bị chưa có giọng tiếng Việt")
             } else {

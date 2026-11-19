@@ -704,7 +704,7 @@ async function renderVoices() {
   }
   const packHtml = (p) => {
     const isIn = installed.has(p.id);
-    const isBundledCore = false; // 3.0.0: không còn gói model gắn sẵn (giọng hệ thống iOS)
+    const isBundledCore = p.id === "vieneu-turbo-int8" && !!state.coreBundled; // 3.1.0: core Turbo lại gắn sẵn (cho 4 giọng VieNeu)
     const size = p.files.reduce((a, f) => a + (f.size || 0), 0);
     return `<div class="card" style="margin-bottom:10px">
       <div class="row between"><h4>${escapeHtml(p.name)}</h4><span class="chip ${isIn || isBundledCore ? "ok" : ""}">${isBundledCore ? "✓ Có sẵn trong app" : isIn ? "✓ Đã tải" : formatBytes(size)}</span></div>

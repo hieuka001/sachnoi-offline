@@ -2,24 +2,31 @@ import Foundation
 import AVFoundation
 
 /// Mặt tiền tổng hợp giọng nói của app (NativePlayer, BookRenderer và
-/// plugin gọi: start / warmup / synthesizeSync / diagnostics / systemVoices).
+/// plugin gọi: start / warmup / synthesizeSync / diagnostics).
 ///
-/// 3.0.0 — NHẸ NHẤT CÓ THỂ (lệnh của anh sau khi xoá bản 2.2.0: "hoạt động
-/// nhẹ nhất có thể, và chạy thật tốt"): BỎ TOÀN BỘ engine VieNeu (Turbo
-/// 260MB, sinh chậm hơn tốc độ nghe, đốt CPU làm máy nóng và bị iOS giết
-/// khi chạy nền; Nano chết vì tensor bool). Engine duy nhất là GIỌNG HỆ
-/// THỐNG iOS qua AVSpeechSynthesizer.write:
-///  * 0 MB model trong app (giọng "Linh" có sẵn trong mọi iPhone; bản
-///    "Linh nâng cao" do người dùng tải trong Cài đặt iOS nếu muốn);
-///  * là engine của chính Apple: nhẹ CPU, không nóng máy, chạy nền là
-///    sân nhà của nó — khoá màn hình vẫn đọc (NativePlayer giữ nguyên);
-///  * sinh nhanh hơn thời gian thực nên cơ chế render trước cả cuốn
-///    (BookRenderer + RenderStore) chạy nhẹ nhàng, không tranh CPU.
-/// Đánh đổi nói thẳng: chỉ có giọng hệ thống (không còn 10 giọng 3 miền
-/// của VieNeu). synthesizeSync vẫn trả WAV PCM16 như cũ nên NativePlayer,
-/// RenderStore và BookRenderer không phải đổi một dòng nào.
+/// 3.1.0 — LAI theo lệnh của anh: nền NHẸ của 3.0.0 + thêm 4 giọng VieNeu.
+///  * **Giọng hệ thống iOS** (AVSpeechSynthesizer, giọng "Linh") là MẶC
+///    ĐỊNH: 0 MB model, nhẹ CPU, không nóng máy, khoá màn hình vẫn đọc —
+///    đường an toàn cho việc nghe hằng ngày.
+///  * **4 giọng VieNeu Turbo** chọn tường minh mới đi đường engine cũ:
+///    Trúc Ly (Bắc, nữ), Hải Đăng (Bắc, nam), Thùy Dung (Nam, nữ),
+///    Thái Sơn (Nam, nam). Core Turbo int8 260MB gắn sẵn như trước; hồ
+///    2 engine như 1.9.5. Đánh đổi đã biết: đường VieNeu sinh chậm và
+///    nóng máy hơn — cơ chế render trước cả cuốn (BookRenderer +
+///    RenderStore) gánh phần liền mạch cho cả hai đường.
+/// Nano vẫn bỏ hẳn (đã chết trên máy thật ở 2.1.0). synthesizeSync luôn
+/// trả WAV PCM16 nên NativePlayer/RenderStore/BookRenderer không đổi.
 final class TtsServer {
     static let shared = TtsServer()
+
+    /// 4 giọng VieNeu Turbo của bản 3.1.0 (Bắc/Nam × nam/nữ). Phải khớp
+    /// voices.json. Mọi id khác (giọng VieNeu ngoài bộ 4, "default", id
+    /// giọng hệ thống) đều đi đường giọng hệ thống.
+    static let vieneuVoices = ["Trúc Ly", "Hải Đăng", "Thùy Dung", "Thái Sơn"]
+
+    static func isVieNeu(_ voice: String) -> Bool { vieneuVoices.contains(voice) }
+
+    // MARK: - Giọng hệ thống iOS
 
     /// Giọng tiếng Việt của hệ thống, ưu tiên bản nâng cao (enhanced /
     /// premium) nếu người dùng đã tải trong Cài đặt iOS.
@@ -35,33 +42,49 @@ final class TtsServer {
         v.quality.rawValue
     }
 
-    /// Mọi id giọng lạ (giọng VieNeu cũ, "default") đều rơi về giọng hệ
-    /// thống tốt nhất hiện có — không bao giờ lỗi.
     static func resolveSystemVoice(_ voice: String) -> AVSpeechSynthesisVoice? {
         let list = vietnameseVoices()
         if let match = list.first(where: { $0.identifier == voice || $0.name == voice }) { return match }
         return list.first ?? AVSpeechSynthesisVoice(language: "vi-VN")
     }
 
-    /// Danh sách giọng cho plugin/web: id = identifier của iOS.
+    /// Danh sách giọng hệ thống cho plugin (id = identifier của iOS).
     func systemVoices() -> [[String: String]] {
         Self.vietnameseVoices().map {
             ["id": $0.identifier, "name": $0.name, "language": $0.language]
         }
     }
 
-    // Tổng hợp nối tiếp qua MỘT synthesizer (AVSpeechSynthesizer.write
-    // không an toàn khi gọi chồng nhau) — engine hệ thống đủ nhanh nên
-    // nối tiếp vẫn nhanh hơn thời gian thực nhiều lần.
+    // Tổng hợp hệ thống nối tiếp qua MỘT synthesizer (write không an toàn
+    // khi gọi chồng nhau) — engine của Apple đủ nhanh khi nối tiếp.
     private let synthQueue = DispatchQueue(label: "app.sachnoi.systemtts", qos: .userInitiated)
     private let synthesizer = AVSpeechSynthesizer()
+
+    // MARK: - Hồ engine VieNeu Turbo (1.9.5)
+
+    private let maxEngines: Int
+    private let poolLock = NSLock()
+    private var idleEngines: [VieNeuEngine] = []
+    private var totalEngines = 0
+
+    private init() {
+        maxEngines = ProcessInfo.processInfo.physicalMemory >= 3_000_000_000 ? 2 : 1
+    }
+
+    /// Khoảng lặng tại dấu câu do người dùng đặt — engine Turbo áp bên
+    /// trong; đường hệ thống do NativePlayer áp giữa các đoạn khi phát.
+    var punctPauseSeconds: Double = 0.3
+    var paraPauseSeconds: Double = 0.7
 
     private enum EngineState {
         case notStarted, loading, ready, failed(String)
     }
     private let stateLock = NSLock()
-    private var engineState: EngineState = .notStarted
+    private var turboState: EngineState = .notStarted
+    private var systemState: EngineState = .notStarted
     private var lastEngineError: String?
+    private var initStepsText = ""
+    private var voiceStore: VoiceStore?
 
     // Thống kê tốc độ tổng hợp cho tab Chẩn đoán (giữ tên khoá như cũ).
     private var synthLastMs = 0
@@ -69,42 +92,140 @@ final class TtsServer {
     private var synthAvgMs = 0
     private var synthSteps = ""
     private var synthEngine = ""
-    private var lastSampleRate = 22050
 
-    /// Khoảng lặng tại dấu câu do người dùng đặt — từ 3.0.0 do NativePlayer
-    /// áp giữa các đoạn khi phát (giọng hệ thống tự xử lý dấu câu bên trong
-    /// đoạn); giữ thuộc tính để plugin/mặt tiền không đổi.
-    var punctPauseSeconds: Double = 0.3
-    var paraPauseSeconds: Double = 0.7
-
-    private init() {}
+    private func setTurboState(_ v: EngineState) { stateLock.lock(); turboState = v; stateLock.unlock() }
+    private func setEngineError(_ v: String?) { stateLock.lock(); lastEngineError = v; stateLock.unlock() }
 
     func start() {
         warmup()
     }
 
-    /// Nạp giọng hệ thống sẵn ở nền ngay khi app mở (lần write đầu tiên
-    /// thường chậm vì iOS phải nạp giọng).
+    /// Nạp ấm ở nền ngay khi app mở: giọng hệ thống trước (nhẹ, là mặc
+    /// định), rồi hồ Turbo — tuần tự để không tranh CPU lúc khởi động.
     func warmup() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            _ = try? self?.synthesizeSync(text: "Sẵn sàng.", voice: "default")
+            guard let self else { return }
+            _ = try? self.synthesizeSync(text: "Sẵn sàng.", voice: "default")
+            for _ in 0..<self.maxEngines {
+                self.poolLock.lock()
+                if self.totalEngines >= self.maxEngines { self.poolLock.unlock(); break }
+                self.totalEngines += 1
+                self.poolLock.unlock()
+                if let e = try? self.makeEngine() {
+                    self.releaseEngine(e)
+                } else {
+                    self.poolLock.lock(); self.totalEngines -= 1; self.poolLock.unlock()
+                    break
+                }
+            }
         }
     }
 
-    // MARK: - Tổng hợp
+    // MARK: - VieNeu Turbo
 
-    func synthesizeSync(text: String, voice: String) throws -> Data {
-        try synthQueue.sync { try synthesizeSerialized(text: text, voice: voice) }
+    func assetsURL() throws -> URL {
+        guard let assets = PackStore.vieneuAssetsURL() else {
+            throw VieNeuEngine.EngineError.asset("TTSAssets (chưa tải gói core VieNeu)")
+        }
+        return assets
     }
 
-    private func synthesizeSerialized(text: String, voice: String) throws -> Data {
+    /// Danh sách giọng Turbo đọc thẳng từ file preset — không cần dựng engine.
+    func getVoiceStore() throws -> VoiceStore {
+        if let voiceStore { return voiceStore }
+        let store = try VoiceStore(url: assetsURL().appendingPathComponent("voices_v3_turbo.json"))
+        voiceStore = store
+        return store
+    }
+
+    private func makeEngine() throws -> VieNeuEngine {
+        setTurboState(.loading)
+        do {
+            let created = try VieNeuEngine(assetsDir: assetsURL())
+            setTurboState(.ready)
+            stateLock.lock(); initStepsText = VieNeuEngine.lastInitSteps; stateLock.unlock()
+            setEngineError(nil)
+            return created
+        } catch {
+            setTurboState(.failed(error.localizedDescription))
+            stateLock.lock(); initStepsText = VieNeuEngine.lastInitSteps; stateLock.unlock()
+            setEngineError(error.localizedDescription)
+            throw error
+        }
+    }
+
+    private func acquireEngine() throws -> VieNeuEngine {
+        let deadline = Date().addingTimeInterval(30)
+        while true {
+            poolLock.lock()
+            if let e = idleEngines.popLast() { poolLock.unlock(); return e }
+            if totalEngines < maxEngines {
+                totalEngines += 1
+                poolLock.unlock()
+                do { return try makeEngine() }
+                catch {
+                    poolLock.lock(); totalEngines -= 1; poolLock.unlock()
+                    throw error
+                }
+            }
+            poolLock.unlock()
+            stateLock.lock()
+            if case .failed(let msg) = turboState {
+                stateLock.unlock()
+                throw VieNeuEngine.EngineError.asset("engine lỗi: \(msg)")
+            }
+            stateLock.unlock()
+            if Date() > deadline { throw VieNeuEngine.EngineError.asset("engine chưa sẵn sàng sau 30s") }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+
+    private func releaseEngine(_ e: VieNeuEngine) {
+        poolLock.lock(); idleEngines.append(e); poolLock.unlock()
+    }
+
+    // MARK: - Tổng hợp (định tuyến theo giọng)
+
+    func synthesizeSync(text: String, voice: String) throws -> Data {
+        if Self.isVieNeu(voice) {
+            return try synthesizeTurbo(text: text, voice: voice)
+        }
+        return try synthQueue.sync { try synthesizeSystem(text: text, voice: voice) }
+    }
+
+    private func synthesizeTurbo(text: String, voice: String) throws -> Data {
+        let t0 = Date()
+        let engine = try acquireEngine()
+        let data: Data
+        do {
+            data = try engine.synthesize(text: text, voiceName: voice,
+                                         punctPause: punctPauseSeconds, paraPause: paraPauseSeconds)
+        } catch {
+            releaseEngine(engine)
+            throw error
+        }
+        releaseEngine(engine)
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
         stateLock.lock()
-        if case .notStarted = engineState { engineState = .loading }
+        synthLastMs = ms
+        synthLastChars = text.count
+        synthAvgMs = synthAvgMs == 0 ? ms : (synthAvgMs * 3 + ms) / 4
+        synthEngine = "turbo"
+        synthSteps = VieNeuEngine.lastSynthSteps
+        let seconds = Double(max(0, data.count - 44)) / 2.0 / Double(VieNeuEngine.sampleRate)
+        synthSteps += " · wav \(String(format: "%.1f", seconds))s"
+        stateLock.unlock()
+        return data
+    }
+
+    private func synthesizeSystem(text: String, voice: String) throws -> Data {
+        stateLock.lock()
+        if case .notStarted = systemState { systemState = .loading }
         stateLock.unlock()
         let t0 = Date()
         guard let sysVoice = Self.resolveSystemVoice(voice) else {
             let msg = "Thiết bị không có giọng tiếng Việt"
-            stateLock.lock(); engineState = .failed(msg); lastEngineError = msg; stateLock.unlock()
+            stateLock.lock(); systemState = .failed(msg); lastEngineError = msg; stateLock.unlock()
             throw NSError(domain: "TtsServer", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         let utterance = AVSpeechUtterance(string: text)
@@ -147,13 +268,12 @@ final class TtsServer {
         }
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         stateLock.lock()
-        engineState = .ready
+        systemState = .ready
         lastEngineError = nil
         synthLastMs = ms
         synthLastChars = text.count
         synthAvgMs = synthAvgMs == 0 ? ms : (synthAvgMs * 3 + ms) / 4
         synthEngine = "system"
-        lastSampleRate = sampleRate
         let seconds = Double(pcm.count) / 2.0 / Double(sampleRate)
         synthSteps = "giọng \(sysVoice.name) · wav \(String(format: "%.1f", seconds))s"
         stateLock.unlock()
@@ -161,7 +281,7 @@ final class TtsServer {
     }
 
     /// Đóng gói PCM16 mono thành WAV (44 byte header) — định dạng mọi tầng
-    /// phía trên (NativePlayer/RenderStore) đã quen từ thời VieNeu.
+    /// phía trên (NativePlayer/RenderStore) đã quen.
     static func wavData(pcm16: Data, sampleRate: Int) -> Data {
         var d = Data()
         func u32(_ v: UInt32) { var x = v.littleEndian; withUnsafeBytes(of: &x) { d.append(contentsOf: $0) } }
@@ -183,30 +303,52 @@ final class TtsServer {
     func diagnostics() -> [String: Any] {
         stateLock.lock()
         let ee = lastEngineError ?? ""
+        let steps = initStepsText
         let sLast = synthLastMs, sChars = synthLastChars, sAvg = synthAvgMs
         let sSteps = synthSteps, sEngine = synthEngine
-        let stateText: String
-        switch engineState {
-        case .notStarted: stateText = "notStarted"
-        case .loading: stateText = "loading"
-        case .ready: stateText = "ready"
-        case .failed(let m): stateText = "failed: \(m)"
+        func text(_ s: EngineState) -> String {
+            switch s {
+            case .notStarted: return "notStarted"
+            case .loading: return "loading"
+            case .ready: return "ready"
+            case .failed(let m): return "failed: \(m)"
+            }
         }
+        let turboText = text(turboState)
+        let systemText = text(systemState)
         stateLock.unlock()
+        poolLock.lock()
+        let poolTotal = totalEngines, poolIdle = idleEngines.count
+        poolLock.unlock()
+
+        var assetsFound = false
+        var missing: [String] = []
+        if let assets = PackStore.vieneuAssetsURL() {
+            assetsFound = true
+            let expected = ["config.json", "heads.bin", "heads.json", "tokenizer.json", "sea_g2p.bin",
+                            "voices_v3_turbo.json", "vieneu_prefill.onnx", "vieneu_decode_step.onnx",
+                            "vieneu_acoustic_cached.onnx", "vieneu_backbone_shared.data",
+                            "moss_audio_tokenizer_decode_full.onnx", "moss_audio_tokenizer_decode_shared.data"]
+            for name in expected where !FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
+                missing.append(name)
+            }
+        }
         let voices = Self.vietnameseVoices()
         var info: [String: Any] = [
-            "engine": stateText,
-            "engineKind": "giọng hệ thống iOS (AVSpeechSynthesizer) + render trước cả cuốn",
+            "engine": turboText,
+            "engineKind": "giọng hệ thống iOS (mặc định) + vieneu-turbo (4 giọng) + render trước cả cuốn",
             "lastSynthEngine": sEngine,
+            "systemEngine": systemText,
+            "systemVoices": voices.map { "\($0.name) (q\($0.quality.rawValue))" }.joined(separator: " · "),
             "engineError": ee,
-            "initSteps": voices.map { "\($0.name) (\($0.language), q\($0.quality.rawValue))" }.joined(separator: " · "),
-            "assetsFound": true,
-            "assetsMissing": [String](),
+            "initSteps": steps,
+            "assetsFound": assetsFound,
+            "assetsMissing": missing,
             "synthLastMs": sLast,
             "synthLastChars": sChars,
             "synthAvgMs": sAvg,
             "synthSteps": sSteps,
-            "engines": "1 (hệ thống)",
+            "engines": "\(poolTotal)/\(maxEngines) (rảnh \(poolIdle))",
             "thermal": ProcessInfo.processInfo.thermalState.rawValue,
         ]
         for (k, v) in BookRenderer.shared.stats() { info[k] = v }
