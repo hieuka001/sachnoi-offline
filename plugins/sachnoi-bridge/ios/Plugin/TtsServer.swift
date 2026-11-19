@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import UIKit
 
 /// Mặt tiền tổng hợp giọng nói của app (NativePlayer, BookRenderer và
 /// plugin gọi: start / warmup / synthesizeSync / diagnostics).
@@ -69,6 +70,18 @@ final class TtsServer {
 
     private init() {
         maxEngines = ProcessInfo.processInfo.physicalMemory >= 3_000_000_000 ? 2 : 1
+        // 3.2.1: vòng đời hồ engine theo vòng đời app — vào nền/cảnh báo
+        // bộ nhớ thì xả hồ (nhả RAM cho tầng phát), quay lại tiền cảnh thì
+        // cho phép giữ hồ trở lại.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
+            self?.drainPool()
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: nil) { [weak self] _ in
+            self?.drainPool()
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+            self?.refillPoolAllowed()
+        }
     }
 
     /// Khoảng lặng tại dấu câu do người dùng đặt — engine Turbo áp bên
@@ -100,25 +113,37 @@ final class TtsServer {
         warmup()
     }
 
-    /// Nạp ấm ở nền ngay khi app mở: giọng hệ thống trước (nhẹ, là mặc
-    /// định), rồi hồ Turbo — tuần tự để không tranh CPU lúc khởi động.
+    /// Nạp ấm ở nền ngay khi app mở: CHỈ giọng hệ thống (nhẹ, là mặc định).
+    /// 3.2.1: KHÔNG dựng hồ Turbo lúc mở app nữa — 2 engine ONNX giữ hàng
+    /// trăm MB RAM thường trực dù người dùng không hề chọn giọng VieNeu,
+    /// và khi app vào nền iOS siết bộ nhớ gắt -> jetsam giết app (máy thật
+    /// 3.2.0: văng app + mất chạy nền). Hồ chỉ dựng LƯỜI khi có yêu cầu
+    /// giọng VieNeu thật (acquireEngine tự dựng), và bị XẢ khi app vào
+    /// nền hoặc hệ thống cảnh báo bộ nhớ (xem drainPool).
     func warmup() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             _ = try? self.synthesizeSync(text: "Sẵn sàng.", voice: "default")
-            for _ in 0..<self.maxEngines {
-                self.poolLock.lock()
-                if self.totalEngines >= self.maxEngines { self.poolLock.unlock(); break }
-                self.totalEngines += 1
-                self.poolLock.unlock()
-                if let e = try? self.makeEngine() {
-                    self.releaseEngine(e)
-                } else {
-                    self.poolLock.lock(); self.totalEngines -= 1; self.poolLock.unlock()
-                    break
-                }
-            }
         }
+    }
+
+    /// Xả hồ engine Turbo: huỷ mọi engine đang rảnh và cấm giữ lại engine
+    /// vừa dùng xong (releaseEngine thả rơi thay vì cất hồ) cho tới khi
+    /// app quay lại tiền cảnh. Engine đang bận tổng hợp thì dùng xong tự
+    /// rơi. Gọi khi app vào nền + khi iOS cảnh báo bộ nhớ.
+    private var poolDrained = false
+    func drainPool() {
+        poolLock.lock()
+        poolDrained = true
+        totalEngines -= idleEngines.count
+        idleEngines.removeAll()
+        poolLock.unlock()
+    }
+
+    func refillPoolAllowed() {
+        poolLock.lock()
+        poolDrained = false
+        poolLock.unlock()
     }
 
     // MARK: - VieNeu Turbo
@@ -181,7 +206,16 @@ final class TtsServer {
     }
 
     private func releaseEngine(_ e: VieNeuEngine) {
-        poolLock.lock(); idleEngines.append(e); poolLock.unlock()
+        poolLock.lock()
+        if poolDrained {
+            // Hồ đang xả (app ở nền / thiếu bộ nhớ): thả rơi engine thay vì
+            // giữ lại — nhả RAM ngay. Lần cần tới acquireEngine dựng mới.
+            totalEngines -= 1
+            poolLock.unlock()
+            return
+        }
+        idleEngines.append(e)
+        poolLock.unlock()
     }
 
     // MARK: - Tổng hợp (định tuyến theo giọng)

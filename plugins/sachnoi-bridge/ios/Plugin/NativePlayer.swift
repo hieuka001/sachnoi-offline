@@ -48,6 +48,10 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     private var cache: [String: Data] = [:]
     private var generation: Int = 0
     private var wasPlayingBeforeInterruption = false
+    /// 3.2.1: đã có phiên load() thật hay chưa — preRender (render tự tiếp
+    /// tục lúc khởi động) chỉ được chạy TRƯỚC phiên thật đầu tiên, tránh
+    /// ghi đè trạng thái của phiên người dùng đang mở.
+    private var didLoad = false
 
     // AVAudioEngine stack (đường chính từ 1.0.6)
     private let engine = AVAudioEngine()
@@ -77,6 +81,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     public func load(items: [Item], voice: String, title: String, author: String, bookId: String = "", audio: AudioSettings? = nil) {
         queue.async { [weak self] in
             guard let self else { return }
+            self.didLoad = true
             self.stopInternal(notify: false)
             self.items = items
             self.voice = voice
@@ -139,7 +144,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     /// khi đang phát (renderer đã được load() gắn rồi).
     public func preRender(items: [Item], voice: String, bookId: String, audio: AudioSettings?) {
         queue.async { [weak self] in
-            guard let self, !self.playing, !bookId.isEmpty else { return }
+            guard let self, !self.playing, !self.didLoad, !bookId.isEmpty else { return }
             self.items = items
             self.voice = voice
             self.bookId = bookId

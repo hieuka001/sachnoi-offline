@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// BookRenderer — hàng đợi RENDER TRƯỚC audio của cả cuốn sách ra
 /// RenderStore, chạy nền song song với việc phát (theo yêu cầu của người
@@ -22,6 +23,13 @@ import Foundation
 /// An toàn nhiệt: thermal .critical thì cả hai luồng ngủ chờ; .serious thì
 /// chỉ 1 luồng chạy. Đoạn render lỗi được đánh dấu bỏ qua trong phiên (phát
 /// tới đó tầng phát vẫn sinh trực tiếp được) — không lặp lỗi vô hạn.
+///
+/// 3.2.1: renderer CHỈ chạy khi app ở TIỀN CẢNH. Bản 3.2.0 bị văng app +
+/// mất chạy nền trên máy thật: khi khoá máy/app vào nền, iOS siết CPU và
+/// bộ nhớ gắt hơn nhiều — renderer còn tổng hợp liên tục ở nền là tự rước
+/// án tử (jetsam/CPU limit), kéo cả tầng phát chết theo. Vào nền là
+/// renderer ngủ; thời gian nền thuộc về riêng tầng phát (đường đã kiểm
+/// chứng từ 1.0.3). Mở app lại, renderer tự chạy tiếp đúng chỗ cũ.
 public final class BookRenderer {
     public static let shared = BookRenderer()
 
@@ -132,6 +140,15 @@ public final class BookRenderer {
             let alive = gen == generation
             lock.unlock()
             if !alive { return }
+            // 3.2.1: vào nền/khoá máy là NGỦ — không nhận việc mới, không
+            // tổng hợp. Chỉ phát tiếp bằng file đã render + sinh trực tiếp
+            // của tầng phát. App active lại thì vòng lặp tự chạy tiếp.
+            var appActive = true
+            DispatchQueue.main.sync { appActive = UIApplication.shared.applicationState == .active }
+            if !appActive {
+                Thread.sleep(forTimeInterval: 2)
+                continue
+            }
             let thermal = ProcessInfo.processInfo.thermalState
             if thermal == .critical || (thermal == .serious && workerId == 1) {
                 Thread.sleep(forTimeInterval: 5)

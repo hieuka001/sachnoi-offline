@@ -174,3 +174,20 @@ test("3.2.0 (VoiceStudio): render TỰ TIẾP TỤC khi mở app — ttsRenderBo
   assert.ok(appJs.includes("resumeRender"), "app.js thiếu resumeRender() lúc khởi động");
   assert.ok(appJs.includes("lastListenedAt"), "resumeRender phải chọn cuốn nghe gần nhất");
 });
+
+test("3.2.1: nền thuộc về tầng phát — renderer chỉ chạy tiền cảnh, hồ Turbo dựng lười + xả khi vào nền", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const renderer = readFileSync(join(pluginDir, "BookRenderer.swift"), "utf8");
+  assert.ok(renderer.includes("applicationState"), "BookRenderer phải kiểm tra applicationState (chỉ render khi app active)");
+  assert.ok(renderer.includes("UIApplication"), "BookRenderer thiếu UIApplication");
+  const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
+  const warmupBody = server.slice(server.indexOf("func warmup()"), server.indexOf("func drainPool()"));
+  assert.ok(!warmupBody.includes("makeEngine"), "warmup KHÔNG được dựng engine Turbo lúc mở app (dựng lười)");
+  assert.ok(server.includes("drainPool"), "TtsServer thiếu drainPool (xả hồ khi vào nền)");
+  assert.ok(server.includes("didEnterBackgroundNotification"), "TtsServer phải xả hồ khi app vào nền");
+  assert.ok(server.includes("didReceiveMemoryWarningNotification"), "TtsServer phải xả hồ khi iOS cảnh báo bộ nhớ");
+  assert.ok(server.includes("poolDrained"), "releaseEngine phải thả rơi engine khi hồ đang xả");
+  const player = readFileSync(join(pluginDir, "NativePlayer.swift"), "utf8");
+  assert.ok(player.includes("didLoad"), "NativePlayer thiếu cờ didLoad chặn preRender sau phiên thật");
+  assert.ok(player.includes("!self.didLoad"), "preRender phải bị chặn khi đã có phiên load thật");
+});
