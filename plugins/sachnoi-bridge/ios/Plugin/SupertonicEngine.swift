@@ -40,7 +40,9 @@ final class SupertonicEngine {
                              "vector_estimator.int8.onnx", "vocoder.int8.onnx",
                              "tts.json", "unicode_indexer.bin", "voice.bin"]
 
-    private var tts: UnsafePointer<SherpaOnnxOfflineTts>?
+    /// Handle C của sherpa: struct mờ (opaque) nên Swift giữ bằng OpaquePointer
+    /// (lỗi y hệt 2.0.0 fix a8bfe7f — struct mờ không có type Swift).
+    private var tts: OpaquePointer?
     let sampleRate: Int
     let numSpeakers: Int
 
@@ -95,10 +97,10 @@ final class SupertonicEngine {
         defer { SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio) }
         let n = Int(audio.pointee.n)
         let rate = Int(audio.pointee.sample_rate)
-        guard n > 0, let src = audio.pointee.samples else {
+        guard n > 0, let src: UnsafePointer<Float> = audio.pointee.samples else {
             return Self.wavData([], sampleRate: rate > 0 ? rate : sampleRate)
         }
-        let samples = Array(UnsafeBufferPointer(start: src, count: n))
+        let samples = [Float](UnsafeBufferPointer(start: src, count: n))
         return Self.wavData(samples, sampleRate: rate)
     }
 
