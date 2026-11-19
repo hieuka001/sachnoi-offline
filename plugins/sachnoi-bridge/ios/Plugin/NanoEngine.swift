@@ -125,9 +125,11 @@ final class NanoEngine {
         // Giữ đúng thứ tự khai báo trong file (JSONSerialization không đảm
         // bảo thứ tự dict) -> sắp xếp theo thứ tự xuất hiện trong dữ liệu thô.
         let rawText = String(data: voicesData, encoding: .utf8) ?? ""
-        let orderedNames = presets.keys.sorted {
-            (rawText.range(of: "\"\($0)\"")?.lowerBound ?? .max) < (rawText.range(of: "\"\($1)\"")?.lowerBound ?? .max)
+        func pos(_ name: String) -> Int {
+            guard let r = rawText.range(of: "\"\(name)\"") else { return Int.max }
+            return rawText.distance(from: rawText.startIndex, to: r.lowerBound)
         }
+        let orderedNames = presets.keys.sorted { pos($0) < pos($1) }
         for name in orderedNames {
             guard let p = presets[name] as? [String: Any],
                   let emb = p["speaker_emb"] as? [Any], emb.count == 192,
@@ -376,8 +378,14 @@ final class NanoEngine {
     }
 
     static func boolTensor(_ data: [UInt8], _ shape: [Int]) throws -> ORTValue {
+        // onnxruntime-objc 1.20.0 không đặt tên case Bool cho
+        // ORTTensorElementDataType — dùng rawValue 9 (= ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL,
+        // khớp cả enum ObjC lẫn C API) để tạo tensor bool cho ctx_mask.
+        guard let boolType = ORTTensorElementDataType(rawValue: 9) else {
+            throw EngineError.ort("onnxruntime không hỗ trợ tensor bool")
+        }
         let md = NSMutableData(bytes: data, length: data.count)
-        return try ORTValue(tensorData: md, elementType: .bool, shape: shape.map { NSNumber(value: $0) })
+        return try ORTValue(tensorData: md, elementType: boolType, shape: shape.map { NSNumber(value: $0) })
     }
 
     static func readFloats(_ value: ORTValue) throws -> [Float] {
