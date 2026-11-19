@@ -2,8 +2,9 @@ import Foundation
 import AVFoundation
 import CryptoKit
 
-/// RenderStore (2.2.0) — kho audio ĐÃ RENDER TRƯỚC trên đĩa: cơ chế đọc liền
-/// mạch của các app sách nói lớn (ebook2audiobook...) áp vào Sách Nói Offline.
+/// RenderStore — kho audio ĐÃ RENDER TRƯỚC trên đĩa: cơ chế đọc liền mạch
+/// của các app sách nói lớn (ebook2audiobook, VoiceStudio...) áp vào Sách
+/// Nói Offline.
 ///
 /// Vì sao: VieNeu Turbo trên iPhone sinh âm THANH CHẬM hơn tốc độ nghe ở
 /// nhiều thời điểm (máy thật 1.9.6: ~9,8 giây cho 102 ký tự, máy nóng lên
@@ -11,74 +12,112 @@ import CryptoKit
 /// vững. Render trước ra file thì phát lại là việc của riêng tầng phát (đã
 /// kiểm chứng chạy nền từ 1.0.3), không còn phụ thuộc tốc độ sinh.
 ///
-/// Mỗi đoạn phát (theo chỉ số đoạn của NativePlayer) = 1 file AAC .m4a
-/// (~64kbps mono ≈ 29MB/giờ nghe — WAV thô 48kHz sẽ tốn ~345MB/giờ).
-/// Khoá render gồm bookId + giọng + 2 khoảng nghỉ (nghỉ được engine nướng
-/// vào audio nên đổi là phải render lại); tốc độ/âm lượng/tông là tầng phát
-/// nên KHÔNG vào khoá.
+/// 3.2.0 — ĐỊA CHỈ HOÁ THEO NỘI DUNG (chắt lọc từ VoiceStudio
+/// debpalash/VoiceStudio, segment cache của họ): mỗi đoạn được lưu theo
+/// HASH của (nội dung câu + giọng + khoảng nghỉ) trong MỘT kho chung, thay
+/// cho (sách + chỉ số đoạn) như 2.2.0. Hệ quả:
+///   * sửa/trích lại 1 câu chỉ render lại đúng câu đó, cả cuốn còn nguyên;
+///   * câu lặp lại trong sách (hoặc trùng giữa các sách) dùng chung 1 file;
+///   * render bị ngắt (tắt app, hết pin) mở lại là tiếp tục từ đúng các
+///     đoạn đã xong — vì file được ghi ngay khi từng đoạn hoàn thành.
+/// Khoảng nghỉ vẫn nằm trong khoá vì engine Turbo nướng nghỉ vào audio;
+/// tốc độ/âm lượng/tông là tầng phát nên KHÔNG vào khoá.
+///
+/// Mỗi đoạn = 1 file AAC .m4a (~64kbps mono ≈ 29MB/giờ nghe — WAV thô
+/// 48kHz sẽ tốn ~345MB/giờ). Ghi file tạm rồi đổi tên nguyên tử để file
+/// dở dang không bao giờ bị phát; trước khi phát còn kiểm tra file mở
+/// được thật (bài học wav_is_complete của VoiceStudio) — file hỏng bị
+/// xoá và sinh lại thay vì phát ra im lặng.
 public enum RenderStore {
     public static var rootURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("SachNoi/TTSRender", isDirectory: true)
     }
 
+    /// Thư mục kho đoạn chung (3.2.0). Bố cục cũ 2.2.0 là thư mục con theo
+    /// từng sách — sweepLegacy() dọn chúng khi gặp lần đầu.
+    public static var segmentsURL: URL { rootURL.appendingPathComponent("segments", isDirectory: true) }
+
+    /// Nhãn hiển thị/thống kê cho một (sách + giọng + nghỉ) — chỉ dùng cho
+    /// tab Chẩn đoán, KHÔNG còn là địa chỉ lưu trữ.
     public static func key(bookId: String, voice: String, gapPunct: Double, gapParagraph: Double) -> String {
         let raw = "\(voice)|\(gapPunct)|\(gapParagraph)"
         let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
         return "\(PackStore.sanitize(bookId))-\(digest.prefix(10))"
     }
 
-    public static func dir(_ key: String) -> URL {
-        rootURL.appendingPathComponent(key, isDirectory: true)
+    /// Địa chỉ nội dung của MỘT đoạn: hash(text + giọng + khoảng nghỉ).
+    /// Đổi bất kỳ yếu tố nào làm đổi audio -> địa chỉ mới -> render lại
+    /// đúng đoạn đó (nguyên tắc cache key của VoiceStudio).
+    public static func segmentID(text: String, voiceKey: String, gapPunct: Double, gapParagraph: Double) -> String {
+        let raw = "v1|\(voiceKey)|\(gapPunct)|\(gapParagraph)|\(text)"
+        return SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    public static func fileURL(_ key: String, _ idx: Int) -> URL {
-        dir(key).appendingPathComponent("\(idx).m4a")
+    public static func fileURL(_ segmentID: String) -> URL {
+        segmentsURL.appendingPathComponent("\(segmentID).m4a")
     }
 
-    public static func exists(_ key: String, _ idx: Int) -> Bool {
-        !key.isEmpty && FileManager.default.fileExists(atPath: fileURL(key, idx).path)
+    public static func exists(_ segmentID: String) -> Bool {
+        let url = fileURL(segmentID)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return false }
+        let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+        return size > 0
     }
 
-    public static func ensureDir(_ key: String) {
-        var url = dir(key)
+    /// File có dùng được thật không: mở được bằng AVAudioFile và có dữ
+    /// liệu. File hỏng/trống bị XOÁ để tầng gọi rơi về sinh trực tiếp —
+    /// không bao giờ phát ra im lặng vì cache hỏng.
+    public static func usable(_ segmentID: String) -> Bool {
+        guard exists(segmentID) else { return false }
+        let url = fileURL(segmentID)
+        if let file = try? AVAudioFile(forReading: url), file.length > 0 { return true }
+        try? FileManager.default.removeItem(at: url)
+        return false
+    }
+
+    public static func ensurePool() {
+        var url = segmentsURL
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try? url.setResourceValues(values)
     }
 
-    /// Số đoạn đã render trong [0, total).
-    public static func renderedCount(_ key: String, total: Int) -> Int {
-        guard !key.isEmpty, total > 0 else { return 0 }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir(key).path)) ?? []
-        var n = 0
-        for name in names where name.hasSuffix(".m4a") {
-            if let idx = Int(name.dropLast(4)), idx >= 0, idx < total { n += 1 }
+    /// Dọn bố cục cũ (thư mục theo sách của 2.2.0) — địa chỉ theo chỉ số
+    /// không ánh xạ được sang địa chỉ nội dung, render lại là cái giá
+    /// một lần. Chỉ xoá thư mục con, không đụng kho segments mới.
+    public static func sweepLegacy() {
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        for e in entries where e.lastPathComponent != "segments" {
+            if (try? e.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                try? fm.removeItem(at: e)
+            }
         }
-        return n
     }
 
-    /// Tập chỉ số đã render (renderer dùng để biết việc còn lại).
-    public static func renderedIndices(_ key: String, total: Int) -> Set<Int> {
-        guard !key.isEmpty, total > 0 else { return [] }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir(key).path)) ?? []
+    /// Tập chỉ số (trong danh sách địa chỉ truyền vào) đã có file render.
+    public static func renderedIndices(segmentIDs: [String]) -> Set<Int> {
         var out = Set<Int>()
-        for name in names where name.hasSuffix(".m4a") {
-            if let idx = Int(name.dropLast(4)), idx >= 0, idx < total { out.insert(idx) }
-        }
+        for (i, id) in segmentIDs.enumerated() where exists(id) { out.insert(i) }
         return out
     }
 
-    /// Lưu WAV PCM16 (đầu ra của engine) thành file AAC .m4a — ghi file tạm
-    /// rồi đổi tên nguyên tử để file dở dang không bao giờ bị phát.
-    public static func saveWav(_ key: String, _ idx: Int, wav: Data) throws {
+    public static func renderedCount(segmentIDs: [String]) -> Int {
+        renderedIndices(segmentIDs: segmentIDs).count
+    }
+
+    /// Lưu WAV PCM16 (đầu ra của engine) thành file AAC .m4a trong kho
+    /// chung — ghi file tạm rồi đổi tên nguyên tử.
+    public static func saveWav(_ segmentID: String, wav: Data) throws {
         guard let buffer = pcmBuffer(fromWav: wav) else {
             throw NSError(domain: "RenderStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "WAV không hợp lệ"])
         }
-        ensureDir(key)
-        let final = fileURL(key, idx)
-        let tmp = dir(key).appendingPathComponent("\(idx).tmp.m4a")
+        ensurePool()
+        let final = fileURL(segmentID)
+        let tmp = segmentsURL.appendingPathComponent("\(segmentID).tmp.m4a")
         try? FileManager.default.removeItem(at: tmp)
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -129,21 +168,24 @@ public enum RenderStore {
         return buffer
     }
 
-    /// Trần dung lượng toàn kho render: vượt thì xoá cả thư mục sách cũ nhất
-    /// (theo ngày sửa gần nhất), chừa thư mục đang dùng.
-    public static func evictIfNeeded(exceptKey: String, capBytes: Int64 = 2_500_000_000) {
+    /// Trần dung lượng toàn kho: vượt thì xoá các FILE đoạn cũ nhất (theo
+    /// ngày sửa) cho tới khi dưới trần — kho chung một cấp nên dọn theo
+    /// file, sách nào ít nghe tự rơi ra trước (LRU toàn cục).
+    public static func evictIfNeeded(capBytes: Int64 = 2_500_000_000) {
         let fm = FileManager.default
-        guard PackStore.directorySize(rootURL) > capBytes else { return }
-        let dirs = ((try? fm.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
-            .filter { $0.lastPathComponent != exceptKey }
+        guard PackStore.directorySize(segmentsURL) > capBytes else { return }
+        let files = ((try? fm.contentsOfDirectory(at: segmentsURL, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey])) ?? [])
+            .filter { $0.pathExtension == "m4a" }
             .sorted { a, b in
                 let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return (da ?? .distantPast) < (db ?? .distantPast)
             }
-        for d in dirs {
-            if PackStore.directorySize(rootURL) <= capBytes { break }
-            try? fm.removeItem(at: d)
+        var size = PackStore.directorySize(segmentsURL)
+        for f in files {
+            if size <= capBytes { break }
+            let s = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if (try? fm.removeItem(at: f)) != nil { size -= Int64(s ?? 0) }
         }
     }
 }

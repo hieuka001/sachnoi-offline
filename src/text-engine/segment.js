@@ -16,9 +16,35 @@ export function splitSentences(text) {
   t = t.replace(/(\d),(\d)/g, "$1\u0002$2");
   t = t.replace(/\.\.\./g, "\u0003");
   const raw = t.match(/[^.!?…]+[.!?…]+["”’)]*\s*|[^.!?…]+$/g) || [];
-  return raw
+  const sentences = raw
     .map((s) => s.replace(/\u0001/g, ".").replace(/\u0002/g, ",").replace(/\u0003/g, "...").trim())
     .filter((s) => s.length > 0);
+  return mergeUnspeakable(sentences);
+}
+
+/**
+ * Gộp các đoạn KHÔNG-PHÁT-ĐƯỢC (chỉ dấu câu/ký hiệu, không chữ không số —
+ * vd "..." , "—" , """) vào đoạn kề (bài học từ VoiceStudio: gửi đoạn
+ * như vậy cho engine là phí một lượt tổng hợp, tệ hơn là engine trả về
+ * im lặng khó phân biệt với lỗi mất tiếng). Dấu câu không bị mất — nó đi
+ * cùng đoạn chứa nó, chỉ không còn đứng một mình thành một lượt đọc.
+ */
+export function mergeUnspeakable(parts) {
+  const speakable = (s) => /[\p{L}\p{N}]/u.test(s);
+  const out = [];
+  for (const p of parts) {
+    if (!speakable(p) && out.length) {
+      out[out.length - 1] = `${out[out.length - 1]} ${p}`.trim();
+    } else {
+      out.push(p);
+    }
+  }
+  // Đoạn đầu mà không phát được thì gộp vào đoạn sau nó.
+  if (out.length > 1 && !speakable(out[0])) {
+    out[1] = `${out[0]} ${out[1]}`.trim();
+    out.shift();
+  }
+  return out;
 }
 
 /** Cắt 1 câu quá dài ở biên mệnh đề (, ; — :) rồi biên từ, không cắt giữa cụm số đã chuẩn hoá. */
@@ -57,5 +83,5 @@ export function chunkSentences(sentences, maxChars = 180) {
     }
   }
   push();
-  return chunks;
+  return mergeUnspeakable(chunks);
 }

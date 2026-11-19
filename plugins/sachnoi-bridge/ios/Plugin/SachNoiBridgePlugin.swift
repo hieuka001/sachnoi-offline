@@ -290,6 +290,23 @@ public class SachNoiBridgePlugin: CAPPlugin {
         call.resolve(["ok": true, "count": items.count])
     }
 
+    /// 3.2.0 (theo mô hình resume của VoiceStudio): gắn BookRenderer cho
+    /// một cuốn sách mà KHÔNG phát — web gọi khi app mở để render tự tiếp
+    /// tục cuốn đang nghe dở, thay vì chờ người dùng bấm Nghe mới render.
+    @objc func ttsRenderBook(_ call: CAPPluginCall) {
+        guard let rawItems = call.getArray("items") as? [[String: Any]] else {
+            call.reject("ttsRenderBook needs items"); return
+        }
+        let items = rawItems
+            .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "", paraEnd: ($0["p"] as? NSNumber)?.boolValue ?? false, cont: ($0["k"] as? NSNumber)?.boolValue ?? false) }
+            .filter { !$0.text.isEmpty }
+        guard !items.isEmpty else { call.reject("Không có câu nào để render"); return }
+        let audio = call.getObject("audio").map { Self.audioSettings(from: $0) }
+        player.preRender(items: items, voice: call.getString("voice") ?? "default",
+                         bookId: call.getString("bookId") ?? "", audio: audio)
+        call.resolve(["ok": true, "count": items.count])
+    }
+
     private static func audioSettings(from d: [String: Any]) -> NativePlayer.AudioSettings {
         var s = NativePlayer.AudioSettings()
         if let v = (d["volume"] as? NSNumber)?.floatValue { s.volume = min(max(0, v), 1) }

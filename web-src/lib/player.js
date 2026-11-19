@@ -112,6 +112,18 @@ export class Player {
     return this.sentences.length;
   }
 
+  /** 3.2.0 (mô hình resume của VoiceStudio): gắn renderer native cho
+   * sách đã load mà KHÔNG phát — app gọi lúc khởi động để cuốn đang nghe
+   * dở tự render tiếp ở nền, mở sách ra là đã có sẵn audio chờ. */
+  async preRender() {
+    const bridge = native();
+    if (!bridge?.ttsRenderBook || !this.book?.id) return;
+    await bridge.ttsRenderBook({
+      items: this._nativeItems(), voice: this.voice,
+      bookId: this.book.id, audio: this._nativeAudio(),
+    }).catch(() => {});
+  }
+
   async play(fromIndex = null) {
     if (fromIndex !== null) this.index = fromIndex;
     if (this.index < 0) this.index = 0;

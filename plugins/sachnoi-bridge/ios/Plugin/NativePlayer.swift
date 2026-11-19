@@ -100,33 +100,61 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    /// Khoá render hiện tại theo (sách, giọng, khoảng nghỉ) + gắn renderer.
-    /// 3.1.0: giọng VieNeu dùng tên giọng làm khoá; giọng hệ thống dùng
-    /// identifier iOS đã phân giải (đổi bản giọng trong Cài đặt iOS ->
-    /// identifier đổi -> tự render lại).
-    private func rekeyRenderer(playIndex: Int) {
-        let resolved = TtsServer.isVieNeu(voice)
+    /// Khoá giọng cho địa chỉ đoạn: VieNeu dùng "vieneu/<tên>"; giọng hệ
+    /// thống dùng identifier iOS đã phân giải (đổi bản giọng trong Cài
+    /// đặt iOS -> identifier đổi -> địa chỉ đổi -> tự render lại).
+    private var voiceKey: String {
+        TtsServer.isVieNeu(voice)
             ? "vieneu/\(voice)"
             : (TtsServer.resolveSystemVoice(voice)?.identifier ?? "system")
-        let synthVoice = TtsServer.isVieNeu(voice) ? voice : resolved
+    }
+
+    /// Địa chỉ nội dung của đoạn idx (3.2.0) — rỗng khi chưa có sách.
+    private func segmentID(for idx: Int) -> String {
+        guard !bookId.isEmpty, idx >= 0, idx < items.count else { return "" }
+        return RenderStore.segmentID(text: items[idx].text, voiceKey: voiceKey,
+                                     gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph)
+    }
+
+    /// Gắn renderer vào sách hiện tại. 3.2.0: renderer tự tính địa chỉ
+    /// nội dung từng đoạn; renderKey chỉ còn là nhãn chẩn đoán.
+    private func rekeyRenderer(playIndex: Int) {
+        let vk = voiceKey
+        let synthVoice = TtsServer.isVieNeu(voice) ? voice : vk
         renderKey = bookId.isEmpty ? "" : RenderStore.key(
-            bookId: bookId, voice: resolved,
+            bookId: bookId, voice: vk,
             gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph)
         guard !renderKey.isEmpty else { return }
         BookRenderer.shared.configure(
-            key: renderKey,
+            label: renderKey,
             items: items.map { (text: $0.text, chapter: $0.chapter) },
-            voice: synthVoice,
+            voiceKey: vk,
+            synthVoice: synthVoice,
+            gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph,
             playIndex: playIndex)
+    }
+
+    /// Gắn renderer mà KHÔNG phát (plugin ttsRenderBook — render tự tiếp
+    /// tục khi app mở lại, theo mô hình resume của VoiceStudio). Bỏ qua
+    /// khi đang phát (renderer đã được load() gắn rồi).
+    public func preRender(items: [Item], voice: String, bookId: String, audio: AudioSettings?) {
+        queue.async { [weak self] in
+            guard let self, !self.playing, !bookId.isEmpty else { return }
+            self.items = items
+            self.voice = voice
+            self.bookId = bookId
+            if let audio { self.settings = audio }
+            self.rekeyRenderer(playIndex: 0)
+        }
     }
 
     /// Lưu WAV vừa tổng hợp trực tiếp vào kho render (nền, bỏ qua lỗi) —
     /// đoạn đã nghe không bao giờ phải sinh lại.
     private func persistRender(idx: Int, wav: Data) {
-        let key = renderKey
-        guard !key.isEmpty else { return }
+        let id = segmentID(for: idx)
+        guard !id.isEmpty else { return }
         DispatchQueue.global(qos: .utility).async {
-            try? RenderStore.saveWav(key, idx, wav: wav)
+            try? RenderStore.saveWav(id, wav: wav)
         }
     }
 
@@ -317,10 +345,14 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             // lưu luôn vào kho render cho lần sau.
             let key = "\(idx)"
             var sources: [AudioSource] = []
+            let segID = self.segmentID(for: idx)
             if let d = self.cache[key] {
                 sources = [.data(d)]
-            } else if RenderStore.exists(self.renderKey, idx) {
-                sources = [.file(RenderStore.fileURL(self.renderKey, idx))]
+            } else if !segID.isEmpty, RenderStore.usable(segID) {
+                // 3.2.0: usable() kiểm tra file mở được thật — file render
+                // hỏng bị xoá tại đây và rơi xuống sinh trực tiếp, không
+                // phát ra im lặng.
+                sources = [.file(RenderStore.fileURL(segID))]
             } else if let d = try? TtsServer.shared.synthesizeSync(text: item.text, voice: self.voice) {
                 self.cache[key] = d
                 self.persistRender(idx: idx, wav: d)
@@ -351,7 +383,8 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     private func prefetch(next nextIdx: Int) {
         guard nextIdx < items.count else { return }
         // Đã có file render thì startCurrent đọc thẳng từ đĩa — khỏi đệm.
-        if RenderStore.exists(renderKey, nextIdx) { return }
+        let segID = segmentID(for: nextIdx)
+        if !segID.isEmpty, RenderStore.exists(segID) { return }
         let v = voice
         let text = items[nextIdx].text
         // 1.9.3 (P0-B): prefetch chạy ở QoS .default thay vì .utility để

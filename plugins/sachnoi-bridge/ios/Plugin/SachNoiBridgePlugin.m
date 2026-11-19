@@ -19,6 +19,7 @@ CAP_PLUGIN(SachNoiBridgePlugin, "SachNoiBridge",
            CAP_PLUGIN_METHOD(scheduleBackgroundTasks, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(markManifestSeen, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsPlay, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(ttsRenderBook, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsPause, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsResume, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(ttsStopPlayback, CAPPluginReturnPromise);

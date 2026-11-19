@@ -815,3 +815,23 @@ renderLibrary();
 // 1.9.3 (P0-A): điền ô chọn giọng ngay khi mở app — trước đây chỉ điền khi
 // mở tab Giọng nên sheet Tuỳ chỉnh mở sớm hiện "No Options".
 fillVoiceSelects().catch(() => {});
+
+// 3.2.0: RENDER TỰ TIẾP TỤC khi mở app (mô hình resume của VoiceStudio:
+// việc render là một "job" bền — ngắt giữa chừng thì mở lại chạy tiếp từ
+// các đoạn đã xong, không chờ người dùng bấm Nghe mới bắt đầu render).
+// Lấy cuốn nghe dở gần nhất, dựng câu từ cache đã lưu, gắn renderer nền.
+async function resumeRender() {
+  try {
+    if (!isNative()) return;
+    const list = (await store.listProgress())
+      .filter((pr) => pr?.extractedCache && pr.totalSentences > 0 && (pr.sentenceIndex || 0) < pr.totalSentences)
+      .sort((a, b) => (b.lastListenedAt || b.updatedAt || 0) - (a.lastListenedAt || a.updatedAt || 0));
+    const pr = list[0];
+    if (!pr) return;
+    const meta = (await store.listBooks()).find((b) => b.id === pr.bookId);
+    if (!meta) return;
+    await state.player.load(meta, pr.extractedCache, mergeDicts(loadGlobalDict(), await store.getBookDict(pr.bookId)), pr.spokenCache);
+    await state.player.preRender();
+  } catch { /* resume là tiện ích nền — lỗi thì bỏ qua, không chặn app */ }
+}
+resumeRender();

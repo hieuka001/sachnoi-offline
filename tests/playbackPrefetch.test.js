@@ -109,7 +109,7 @@ test("3.1.0: đúng 4 giọng VieNeu Bắc/Nam x nam/nữ + 1 giọng hệ thố
   assert.ok(pack && pack.status === "available", "gói vieneu-turbo-int8 phải available");
 });
 
-test("2.2.0/3.0.0: render trước cả cuốn — RenderStore + BookRenderer + NativePlayer đọc từ file", () => {
+test("2.2.0/3.2.0: render trước cả cuốn — RenderStore + BookRenderer + NativePlayer đọc từ file", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const store = readFileSync(join(pluginDir, "RenderStore.swift"), "utf8");
   assert.ok(store.includes("TTSRender"), "RenderStore phải lưu ở SachNoi/TTSRender");
@@ -121,7 +121,7 @@ test("2.2.0/3.0.0: render trước cả cuốn — RenderStore + BookRenderer + 
   assert.ok(renderer.includes("chaptersSeen > 2"), "ưu tiên phải là chương hiện tại + 2 chương kế (đệm 2–3 chương)");
   assert.ok(renderer.includes("thermalState"), "BookRenderer phải nhường khi máy quá nóng (thermal)");
   assert.ok(renderer.includes("synthesizeSync"), "BookRenderer phải tổng hợp qua TtsServer");
-  assert.ok(swift.includes("RenderStore.exists"), "NativePlayer phải ưu tiên file đã render trước khi sinh trực tiếp");
+  assert.ok(swift.includes("RenderStore.usable"), "NativePlayer phải ưu tiên file đã render (đã kiểm tra dùng được) trước khi sinh trực tiếp");
   assert.ok(swift.includes("BookRenderer.shared"), "NativePlayer phải gắn BookRenderer");
   assert.ok(swift.includes("persistRender"), "NativePlayer phải lưu đoạn sinh trực tiếp vào kho render");
   assert.ok(swift.includes("makeBufferFromFile"), "NativePlayer thiếu giải mã file đã render");
@@ -140,4 +140,37 @@ test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", (
     .filter((p) => p.endsWith(".html") || p.endsWith(".js"))
     .filter((p) => /cần tải (gói )?Core|tải gói Core trước|tải Core trước/i.test(readFileSync(p, "utf8")));
   assert.deepEqual(stale, [], `còn câu chữ lỗi thời về tải Core trong: ${stale.join(", ")}`);
+});
+
+test("3.2.0 (VoiceStudio): kho render địa chỉ hoá theo NỘI DUNG đoạn, không theo chỉ số sách", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const store = readFileSync(join(pluginDir, "RenderStore.swift"), "utf8");
+  assert.ok(store.includes("func segmentID"), "RenderStore thiếu segmentID (hash nội dung đoạn)");
+  assert.ok(store.includes("segmentsURL"), "RenderStore thiếu kho đoạn chung segments/");
+  assert.ok(store.includes("sweepLegacy"), "RenderStore thiếu dọn bố cục thư mục-theo-sách cũ");
+  assert.ok(store.includes("func usable"), "RenderStore thiếu usable() — kiểm tra file render hỏng trước khi phát");
+  assert.ok(store.includes("AVAudioFile(forReading"), "usable() phải mở thử file bằng AVAudioFile");
+  const renderer = readFileSync(join(pluginDir, "BookRenderer.swift"), "utf8");
+  assert.ok(renderer.includes("segmentIDs"), "BookRenderer phải tính địa chỉ nội dung từng đoạn");
+  assert.ok(renderer.includes("RenderStore.renderedIndices(segmentIDs:"), "BookRenderer phải đọc việc đã xong từ kho chung");
+  const player = readFileSync(join(pluginDir, "NativePlayer.swift"), "utf8");
+  assert.ok(player.includes("func segmentID(for"), "NativePlayer thiếu segmentID(for:)");
+  assert.ok(player.includes("RenderStore.usable(segID)"), "NativePlayer phải phát từ file đã kiểm tra usable");
+  assert.ok(!player.includes("RenderStore.exists(self.renderKey"), "NativePlayer vẫn còn tra file theo khoá sách cũ");
+  assert.ok(player.includes("func preRender"), "NativePlayer thiếu preRender (gắn renderer không phát)");
+});
+
+test("3.2.0 (VoiceStudio): render TỰ TIẾP TỤC khi mở app — ttsRenderBook + resumeRender", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const plugin = readFileSync(join(pluginDir, "SachNoiBridgePlugin.swift"), "utf8");
+  assert.ok(plugin.includes("func ttsRenderBook"), "plugin thiếu ttsRenderBook");
+  assert.ok(plugin.includes("preRender"), "ttsRenderBook phải gọi NativePlayer.preRender");
+  const reg = readFileSync(join(pluginDir, "SachNoiBridgePlugin.m"), "utf8");
+  assert.ok(reg.includes("ttsRenderBook"), "SachNoiBridgePlugin.m chưa đăng ký ttsRenderBook");
+  const playerJs = readFileSync(join(root, "web-src/lib/player.js"), "utf8");
+  assert.ok(playerJs.includes("preRender()"), "player.js thiếu preRender()");
+  assert.ok(playerJs.includes("ttsRenderBook"), "player.preRender phải gọi bridge.ttsRenderBook");
+  const appJs = readFileSync(join(root, "web-src/app.js"), "utf8");
+  assert.ok(appJs.includes("resumeRender"), "app.js thiếu resumeRender() lúc khởi động");
+  assert.ok(appJs.includes("lastListenedAt"), "resumeRender phải chọn cuốn nghe gần nhất");
 });

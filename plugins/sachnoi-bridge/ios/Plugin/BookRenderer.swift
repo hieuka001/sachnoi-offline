@@ -1,6 +1,6 @@
 import Foundation
 
-/// BookRenderer (2.2.0) — hàng đợi RENDER TRƯỚC audio của cả cuốn sách ra
+/// BookRenderer — hàng đợi RENDER TRƯỚC audio của cả cuốn sách ra
 /// RenderStore, chạy nền song song với việc phát (theo yêu cầu của người
 /// dùng: "render trước 2–3 chương, trong lúc phát sẽ tiếp tục render cả
 /// cuốn").
@@ -13,6 +13,12 @@ import Foundation
 /// tiếp vẫn vào cùng hàng đợi engine — tệ nhất bằng hành vi cũ, thường thì
 /// đoạn cần phát đã có sẵn file.
 ///
+/// 3.2.0: đoạn được địa chỉ hoá theo NỘI DUNG (RenderStore.segmentID) —
+/// renderer tính địa chỉ từng đoạn một lần khi gắn sách; "đã xong" đọc
+/// thẳng từ kho chung nên render tiếp tục đúng chỗ sau khi app mở lại,
+/// và configure() cũng được plugin gọi độc lập (ttsRenderBook) để render
+/// tự chạy tiếp mà không cần phát.
+///
 /// An toàn nhiệt: thermal .critical thì cả hai luồng ngủ chờ; .serious thì
 /// chỉ 1 luồng chạy. Đoạn render lỗi được đánh dấu bỏ qua trong phiên (phát
 /// tới đó tầng phát vẫn sinh trực tiếp được) — không lặp lỗi vô hạn.
@@ -23,6 +29,7 @@ public final class BookRenderer {
     private var generation = 0
     private var key = ""
     private var items: [(text: String, chapter: String)] = []
+    private var segmentIDs: [String] = []
     private var voice = ""
     private var playIndex = 0
     private var done = Set<Int>()
@@ -32,25 +39,29 @@ public final class BookRenderer {
 
     private init() {}
 
-    /// Gắn renderer vào một cuốn sách + giọng + khoá render. Gọi lại khi đổi
-    /// sách/giọng/khoảng nghỉ: vòng render cũ tự dừng theo generation.
-    public func configure(key: String, items: [(text: String, chapter: String)], voice: String, playIndex: Int) {
+    /// Gắn renderer vào một cuốn sách + giọng + khoảng nghỉ. Gọi lại khi
+    /// đổi sách/giọng/khoảng nghỉ: vòng render cũ tự dừng theo generation.
+    /// `label` chỉ để chẩn đoán; địa chỉ đoạn tính từ (text, voiceKey, gaps).
+    public func configure(label: String, items: [(text: String, chapter: String)], voiceKey: String, synthVoice: String, gapPunct: Double, gapParagraph: Double, playIndex: Int) {
+        RenderStore.sweepLegacy()
+        let ids = items.map { RenderStore.segmentID(text: $0.text, voiceKey: voiceKey, gapPunct: gapPunct, gapParagraph: gapParagraph) }
         lock.lock()
         generation += 1
         let gen = generation
-        self.key = key
+        self.key = label
         self.items = items
-        self.voice = voice
+        self.segmentIDs = ids
+        self.voice = synthVoice
         self.playIndex = playIndex
-        done = RenderStore.renderedIndices(key, total: items.count)
+        done = RenderStore.renderedIndices(segmentIDs: ids)
         inFlight = []
         failed = []
         let need = done.count + failed.count < items.count ? 2 : 0
         workersAlive = need
         lock.unlock()
         guard need > 0 else { return }
-        RenderStore.ensureDir(key)
-        RenderStore.evictIfNeeded(exceptKey: key)
+        RenderStore.ensurePool()
+        RenderStore.evictIfNeeded()
         for w in 0..<need {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.worker(gen: gen, workerId: w)
@@ -94,7 +105,7 @@ public final class BookRenderer {
     }
 
     /// Chọn đoạn render tiếp theo + giữ chỗ nguyên tử. nil = hết việc.
-    private func nextIndex(gen: Int) -> (idx: Int, text: String, voice: String, key: String)? {
+    private func nextIndex(gen: Int) -> (idx: Int, text: String, voice: String, segmentID: String)? {
         lock.lock()
         defer { lock.unlock() }
         guard gen == generation, !items.isEmpty else { return nil }
@@ -104,7 +115,7 @@ public final class BookRenderer {
         for r in ranges {
             for i in r where !done.contains(i) && !inFlight.contains(i) && !failed.contains(i) {
                 inFlight.insert(i)
-                return (i, items[i].text, voice, key)
+                return (i, items[i].text, voice, segmentIDs[i])
             }
         }
         return nil
@@ -129,7 +140,7 @@ public final class BookRenderer {
             guard let job = nextIndex(gen: gen) else { return }
             do {
                 let wav = try TtsServer.shared.synthesizeSync(text: job.text, voice: job.voice)
-                try RenderStore.saveWav(job.key, job.idx, wav: wav)
+                try RenderStore.saveWav(job.segmentID, wav: wav)
                 lock.lock()
                 inFlight.remove(job.idx)
                 done.insert(job.idx)

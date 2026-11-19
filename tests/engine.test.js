@@ -60,3 +60,11 @@ test("số La Mã đúng ngữ cảnh, § đọc là mục", () => {
 test("viết tắt nước ngoài quen thuộc vẫn đánh vần", () => {
   assert.match(normalizeForSpeech("FBI mở hồ sơ"), /ép bi ai/);
 });
+
+test("3.2.0 (VoiceStudio): đoạn không-phát-được (chỉ dấu câu) bị gộp vào đoạn kề, không đứng một mình", () => {
+  const s = splitSentences("Anh im lặng. ... Rồi anh bước đi.");
+  assert.ok(s.every((x) => /[\p{L}\p{N}]/u.test(x)), `còn đoạn chỉ dấu câu: ${JSON.stringify(s)}`);
+  assert.equal(s.length, 2);
+  const c = chunkSentences(["...", "Câu đầu tiên đây.", "—", "Câu thứ hai đây."]);
+  assert.ok(c.every((x) => /[\p{L}\p{N}]/u.test(x)), `chunk còn đoạn chỉ dấu câu: ${JSON.stringify(c)}`);
+});

@@ -6,7 +6,7 @@ import { cleanupText, normalizeForSpeech } from "./normalize.js";
 import { splitSentences, chunkSentences } from "./segment.js";
 
 export { cleanupText, normalizeForSpeech } from "./normalize.js";
-export { splitSentences, chunkSentences, splitLongSentence } from "./segment.js";
+export { splitSentences, chunkSentences, splitLongSentence, mergeUnspeakable } from "./segment.js";
 export { numberToVietnamese, digitsToVietnamese, romanToInt } from "./numbers.js";
 
 /**
