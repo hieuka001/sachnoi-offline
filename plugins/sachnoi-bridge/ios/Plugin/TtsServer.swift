@@ -1,22 +1,34 @@
 import Foundation
 
-/// Mặt tiền tổng hợp giọng nói của app (NativePlayer và plugin gọi:
-/// start / warmup / synthesizeSync / diagnostics / getVoiceStore).
+/// Mặt tiền tổng hợp giọng nói của app (NativePlayer, BookRenderer và
+/// plugin gọi: start / warmup / synthesizeSync / diagnostics / getVoiceStore).
 ///
-/// 2.1.0 — THUẦN VieNeu, HAI engine sau một mặt tiền (lệnh của anh: "vừa
-/// VieNeu vừa mượt"):
-///  * **Nano** (VieNeu-TTS v3 Nano): model flow, số bước cố định, nhanh hơn
-///    thời gian thực trên CPU yếu -> nghe LIỀN MẠCH. 11 giọng preset, 24kHz.
-///    Giọng chọn bằng id "nano/<Tên preset>".
-///  * **Turbo** (VieNeu-TTS v3 Turbo int8): 25 giọng 3 miền, 48kHz, chất
-///    lượng cao nhất nhưng sinh từng khung hình nên chậm trên máy yếu
-///    (số liệu 1.9.6: ~9,8s cho 6,2s tiếng). Hồ 2 engine song song như 1.9.5.
-/// sherpa-onnx/Piper của 2.0.0 đã GỠ (anh chốt thuần VieNeu) cùng server
-/// HTTP 127.0.0.1:3900 từ thời pipeline cũ — bề mặt duy nhất là synthesizeSync.
+/// 2.2.0 — THUẦN VieNeu Turbo, 10 giọng cho 3 miền (lệnh của anh: bỏ Nano —
+/// Nano chết trên máy thật vì onnxruntime không tạo được tensor bool; Turbo
+/// là engine chất lượng nhất nhưng sinh từng khung hình nên chậm hơn tốc độ
+/// nghe). Cách làm liền mạch từ 2.2.0 là RENDER TRƯỚC ra đĩa (BookRenderer +
+/// RenderStore): phát từ file đã render, không phụ thuộc tốc độ sinh.
+/// Hồ 2 engine song song như 1.9.5 — một engine phục vụ phát trực tiếp,
+/// một engine render trước, thừa thì cả hai cùng render.
 final class TtsServer {
     static let shared = TtsServer()
 
-    static let nanoPrefix = "nano/"
+    /// 10 giọng Turbo được chọn cho đủ 3 miền (2026-11-19): Bắc 4 (Trúc Ly,
+    /// Ngọc Huyền, Hải Đăng, Phạm Tuyên), Trung 2 (Ngọc Trân, Quang Sơn —
+    /// miền Trung chỉ có đúng 2 giọng trong bộ preset), Nam 4 (Thùy Dung,
+    /// Mỹ Duyên, Thái Sơn, Đức Trí). Phải khớp danh sách trong voices.json.
+    static let allowedVoices = [
+        "Trúc Ly", "Ngọc Huyền", "Hải Đăng", "Phạm Tuyên",
+        "Ngọc Trân", "Quang Sơn",
+        "Thùy Dung", "Mỹ Duyên", "Thái Sơn", "Đức Trí",
+    ]
+    static let defaultVoice = "Trúc Ly"
+
+    /// Mọi id giọng lạ (giọng Nano cũ "nano/...", giọng Turbo đã bỏ, tuỳ
+    /// chọn "Giọng mặc định") đều rơi về giọng mặc định — không bao giờ lỗi.
+    static func resolveVoice(_ voice: String) -> String {
+        allowedVoices.contains(voice) ? voice : defaultVoice
+    }
 
     // ── Hồ engine Turbo (1.9.5): 2 engine độc lập tổng hợp 2 đoạn song
     // song; máy RAM < 3GB giữ 1 engine để tránh bị iOS giết vì bộ nhớ.
@@ -31,7 +43,7 @@ final class TtsServer {
 
     /// Khoảng lặng tại dấu câu do người dùng đặt (plugin ghi vào mỗi khi áp
     /// cài đặt âm thanh) — engine Turbo áp bên trong; NativePlayer cũng áp
-    /// giữa các đoạn khi phát cho cả hai engine.
+    /// giữa các đoạn khi phát.
     var punctPauseSeconds: Double = 0.3
     var paraPauseSeconds: Double = 0.7
 
@@ -40,10 +52,8 @@ final class TtsServer {
     }
     private let stateLock = NSLock()
     private var turboState: EngineState = .notStarted
-    private var nanoState: EngineState = .notStarted
     private var lastEngineError: String?
     private var initStepsText = ""
-    private var nanoInitStepsText = ""
     private var voiceStore: VoiceStore?
 
     // Thống kê tốc độ tổng hợp cho tab Chẩn đoán (giữ tên khoá như 1.9.x).
@@ -53,13 +63,7 @@ final class TtsServer {
     private var synthSteps = ""
     private var synthEngine = ""
 
-    // ── Engine Nano (đơn, khoá nối tiếp) ──
-    private var nanoEngine: NanoEngine?
-    private let nanoLock = NSLock()
-    private let nanoSynthLock = NSLock()
-
     private func setTurboState(_ v: EngineState) { stateLock.lock(); turboState = v; stateLock.unlock() }
-    private func setNanoState(_ v: EngineState) { stateLock.lock(); nanoState = v; stateLock.unlock() }
     private func setEngineError(_ v: String?) { stateLock.lock(); lastEngineError = v; stateLock.unlock() }
 
     func start() {
@@ -67,12 +71,10 @@ final class TtsServer {
         warmup()
     }
 
-    /// Nạp sẵn cả hai engine ở nền ngay khi app mở: Nano trước (nhẹ, là
-    /// đường nghe mượt), rồi tới hồ Turbo — tuần tự để không tranh CPU.
+    /// Nạp sẵn hồ engine Turbo ở nền ngay khi app mở để bấm Nghe là có tiếng.
     func warmup() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            _ = try? self.getNanoEngine()
             for _ in 0..<self.maxEngines {
                 self.poolLock.lock()
                 if self.totalEngines >= self.maxEngines { self.poolLock.unlock(); break }
@@ -152,46 +154,7 @@ final class TtsServer {
         poolLock.lock(); idleEngines.append(e); poolLock.unlock()
     }
 
-    // MARK: - Nano
-
-    func nanoAssetsURL() throws -> URL {
-        guard let assets = PackStore.nanoAssetsURL() else {
-            throw NanoEngine.EngineError.asset("NanoAssets (chưa gắn sẵn trong app)")
-        }
-        return assets
-    }
-
-    private func getNanoEngine() throws -> NanoEngine {
-        nanoLock.lock()
-        defer { nanoLock.unlock() }
-        if let nanoEngine { return nanoEngine }
-        setNanoState(.loading)
-        do {
-            let created = try NanoEngine(assetsDir: nanoAssetsURL(),
-                                         g2pPath: assetsURL().appendingPathComponent("sea_g2p.bin").path)
-            nanoEngine = created
-            setNanoState(.ready)
-            stateLock.lock(); nanoInitStepsText = NanoEngine.lastInitSteps; stateLock.unlock()
-            return created
-        } catch {
-            setNanoState(.failed(error.localizedDescription))
-            // Giữ lại các bước init đã chạy trước khi lỗi để tab Chẩn đoán
-            // chỉ ra engine chết ở bước nào (2.1.0 mất dấu vết này).
-            stateLock.lock(); nanoInitStepsText = NanoEngine.lastInitSteps; stateLock.unlock()
-            setEngineError(error.localizedDescription)
-            throw error
-        }
-    }
-
-    /// Danh sách giọng Nano cho plugin (id có tiền tố "nano/" để định tuyến).
-    func nanoVoiceList() -> [[String: String]] {
-        guard let engine = try? getNanoEngine() else { return [] }
-        return engine.voices.map {
-            ["id": Self.nanoPrefix + $0.name, "name": "\($0.name) · Nano (mượt)", "language": "vi"]
-        }
-    }
-
-    // MARK: - Tổng hợp (định tuyến theo giọng)
+    // MARK: - Tổng hợp
 
     func synthesizeSync(text: String, voice: String) throws -> Data {
         try synthesizeNow(text: text, voice: voice)
@@ -199,46 +162,26 @@ final class TtsServer {
 
     func synthesizeNow(text: String, voice: String) throws -> Data {
         let t0 = Date()
+        let resolved = Self.resolveVoice(voice)
+        let engine = try acquireEngine()
         let data: Data
-        let kind: String
-        // 2.1.0: "Giọng mặc định" (default/rỗng) đi đường NANO — mặc định
-        // nghe sách phải mượt; giọng Turbo chọn tường minh theo tên preset.
-        let isNano = voice.hasPrefix(Self.nanoPrefix) || voice.isEmpty || voice == "default"
-        if isNano {
-            let engine = try getNanoEngine()
-            nanoSynthLock.lock()
-            do {
-                let preset = voice.hasPrefix(Self.nanoPrefix) ? String(voice.dropFirst(Self.nanoPrefix.count)) : nil
-                data = try engine.synthesize(text: text, voiceName: preset)
-            } catch {
-                nanoSynthLock.unlock()
-                throw error
-            }
-            nanoSynthLock.unlock()
-            kind = "nano"
-            stateLock.lock(); synthSteps = NanoEngine.lastSynthSteps; stateLock.unlock()
-        } else {
-            let engine = try acquireEngine()
-            do {
-                data = try engine.synthesize(text: text, voiceName: voice.isEmpty ? nil : voice,
-                                             punctPause: punctPauseSeconds, paraPause: paraPauseSeconds)
-            } catch {
-                releaseEngine(engine)
-                throw error
-            }
+        do {
+            data = try engine.synthesize(text: text, voiceName: resolved,
+                                         punctPause: punctPauseSeconds, paraPause: paraPauseSeconds)
+        } catch {
             releaseEngine(engine)
-            kind = "turbo"
-            stateLock.lock(); synthSteps = VieNeuEngine.lastSynthSteps; stateLock.unlock()
+            throw error
         }
+        releaseEngine(engine)
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         stateLock.lock()
         synthLastMs = ms
         synthLastChars = text.count
         synthAvgMs = synthAvgMs == 0 ? ms : (synthAvgMs * 3 + ms) / 4
-        synthEngine = kind
+        synthEngine = "turbo"
+        synthSteps = VieNeuEngine.lastSynthSteps
         // WAV 44 byte header + PCM16: suy độ dài tiếng để đối chiếu tốc độ.
-        let rate = kind == "nano" ? NanoEngine.sampleRate : VieNeuEngine.sampleRate
-        let seconds = Double(max(0, data.count - 44)) / 2.0 / Double(rate)
+        let seconds = Double(max(0, data.count - 44)) / 2.0 / Double(VieNeuEngine.sampleRate)
         synthSteps += " · wav \(String(format: "%.1f", seconds))s"
         stateLock.unlock()
         return data
@@ -250,7 +193,6 @@ final class TtsServer {
         stateLock.lock()
         let ee = lastEngineError ?? ""
         let steps = initStepsText
-        let nanoSteps = nanoInitStepsText
         let sLast = synthLastMs, sChars = synthLastChars, sAvg = synthAvgMs
         let sSteps = synthSteps, sEngine = synthEngine
         func text(_ s: EngineState) -> String {
@@ -262,7 +204,6 @@ final class TtsServer {
             }
         }
         let turboText = text(turboState)
-        let nanoText = text(nanoState)
         stateLock.unlock()
         poolLock.lock()
         let poolTotal = totalEngines, poolIdle = idleEngines.count
@@ -280,28 +221,14 @@ final class TtsServer {
                 missing.append(name)
             }
         }
-        var nanoFound = false
-        var nanoMissing: [String] = []
-        if let assets = PackStore.nanoAssetsURL() {
-            nanoFound = true
-            for name in ["text_encoder.onnx", "duration_predictor.onnx", "vector_estimator.onnx",
-                         "codec_decoder.onnx", "config.json", "constants.json", "voices_v3_nano.json"]
-            where !FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
-                nanoMissing.append(name)
-            }
-        }
-        return [
+        var info: [String: Any] = [
             "engine": turboText,
-            "engineKind": "vieneu-turbo (25 giọng) + vieneu-nano (11 giọng, mượt)",
+            "engineKind": "vieneu-turbo (10 giọng 3 miền) + render trước cả cuốn",
             "lastSynthEngine": sEngine,
-            "nanoEngine": nanoText,
             "engineError": ee,
             "initSteps": steps,
-            "nanoInitSteps": nanoSteps,
             "assetsFound": assetsFound,
             "assetsMissing": missing,
-            "nanoAssetsFound": nanoFound,
-            "nanoAssetsMissing": nanoMissing,
             "synthLastMs": sLast,
             "synthLastChars": sChars,
             "synthAvgMs": sAvg,
@@ -309,10 +236,12 @@ final class TtsServer {
             "engines": "\(poolTotal)/\(maxEngines) (rảnh \(poolIdle))",
             "thermal": ProcessInfo.processInfo.thermalState.rawValue,
         ]
+        for (k, v) in BookRenderer.shared.stats() { info[k] = v }
+        return info
     }
 
-    /// Đợt 31: app KHÔNG lưu lại âm thanh đã đọc. Dọn một lần hai kho đĩa
-    /// của các đợt cũ nếu còn sót trên máy.
+    /// Dọn một lần hai kho đĩa của pipeline cũ (trước 2.2.0 app không lưu
+    /// audio đã đọc). Kho render mới nằm ở SachNoi/TTSRender — không đụng.
     private func purgeLegacyAudioStores() {
         let fm = FileManager.default
         let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]

@@ -35,7 +35,7 @@ jobs:
         run: npm run build:web
 
       # 2.1.0: THUẦN VieNeu — sea-g2p (bộ phiên âm tiếng Việt, Rust) dùng
-      # chung cho cả hai engine Nano + Turbo -> thư viện tĩnh .a cho iOS qua
+      # cho engine Turbo -> thư viện tĩnh .a cho iOS qua
       # C ABI, ghim đúng commit bản 0.10.0 như pipeline đã kiểm chứng.
       - name: Build sea-g2p static library (Rust C ABI)
         run: |
@@ -78,25 +78,6 @@ jobs:
           shasum -a 256 -c /tmp/tts-sha.txt
           du -sh ios/App/App/TTSAssets
 
-      # Model VieNeu-TTS v3 Nano GẮN SẴN (2.1.0): assets từ Release
-      # vieneu-nano-v1 của chính repo này (nguồn gốc: huggingface
-      # pnnbao-ump/VieNeu-TTS-v3-Nano) + kiểm SHA-256 theo voices.json.
-      - name: Fetch bundled Nano model (Release vieneu-nano-v1 + SHA-256)
-        run: |
-          mkdir -p ios/App/App/NanoAssets
-          python3 - <<'PY'
-          import json, pathlib
-          m = json.loads(pathlib.Path("voices/voices.json").read_text())
-          pack = next(p for p in m["packs"] if p["id"] == "vieneu-nano")
-          lines = [f"{f['sha256']}  ios/App/App/NanoAssets/{f['name']}" for f in pack["files"]]
-          pathlib.Path("/tmp/nano-sha.txt").write_text("\n".join(lines) + "\n")
-          pathlib.Path("/tmp/nano-urls.txt").write_text("\n".join(f["url"] for f in pack["files"]) + "\n")
-          print(f"{len(lines)} files")
-          PY
-          while read -r url; do curl -fL --retry 3 -o "ios/App/App/NanoAssets/$(basename "$url")" "$url"; done < /tmp/nano-urls.txt
-          shasum -a 256 -c /tmp/nano-sha.txt
-          du -sh ios/App/App/NanoAssets
-
       - name: Sync Capacitor iOS (incl. pod install)
         run: npx cap sync ios
 
@@ -124,13 +105,9 @@ jobs:
           test -f "$APP_PATH/TTSAssets/config.json" || { echo "LỖI: IPA thiếu TTSAssets — bản 2.1.0 phải gắn sẵn core Turbo"; exit 1; }
           ls "$APP_PATH/TTSAssets" | wc -l
           du -sh "$APP_PATH/TTSAssets"
-          echo "--- Kiểm tra model gắn sẵn: PHẢI có NanoAssets đủ 7 file (Nano) ---"
-          test -f "$APP_PATH/NanoAssets/vector_estimator.onnx" || { echo "LỖI: IPA thiếu NanoAssets — bản 2.1.0 phải gắn sẵn model Nano"; exit 1; }
-          test -f "$APP_PATH/NanoAssets/voices_v3_nano.json" || { echo "LỖI: IPA thiếu voices_v3_nano.json"; exit 1; }
-          ls "$APP_PATH/NanoAssets" | wc -l
-          du -sh "$APP_PATH/NanoAssets"
-          echo "--- Kiểm tra binary có engine Nano ---"
-          strings "$APP_PATH/App" | grep -m1 "voices_v3_nano" || { echo "LỖI: binary không có NanoEngine"; exit 1; }
+          echo "--- 2.2.0: IPA KHÔNG được còn NanoAssets; binary phải có kho render trước ---"
+          test ! -e "$APP_PATH/NanoAssets" || { echo "LỖI: IPA vẫn còn NanoAssets — bản 2.2.0 đã bỏ Nano"; exit 1; }
+          strings "$APP_PATH/App" | grep -m1 "TTSRender" || { echo "LỖI: binary không có RenderStore (render trước)"; exit 1; }
           du -sh "$APP_PATH"
           rm -rf Payload && mkdir Payload
           cp -R "$APP_PATH" Payload/

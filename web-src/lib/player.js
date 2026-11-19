@@ -127,6 +127,7 @@ export class Player {
         await bridge.ttsPlay({
           items: this._nativeItems(), startIndex: startItem, voice: this.voice,
           title: this.book?.title || "", author: this.book?.author || "",
+          bookId: this.book?.id || "",
           audio: this._nativeAudio(),
         }).catch(() => {});
         bridge.ttsSetRate?.({ rate: this.speed }).catch(() => {});

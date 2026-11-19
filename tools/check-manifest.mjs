@@ -18,7 +18,7 @@ for (const p of m.packs || []) {
     }
   }
 }
-// 2.1.0: thuần VieNeu — 11 giọng Nano + 25 giọng Turbo = 36 giọng gắn sẵn.
-if ((m.voices || []).length < 36) errors.push(`Danh sách giọng thiếu: ${(m.voices || []).length}/36`);
+// 2.2.0: thuần VieNeu Turbo — đúng 10 giọng đã chọn cho 3 miền (Nano đã bỏ).
+if ((m.voices || []).length !== 10) errors.push(`Danh sách giọng phải đúng 10: đang có ${(m.voices || []).length}`);
 if (errors.length) { console.error("MANIFEST LỖI:\n- " + errors.join("\n- ")); process.exit(1); }
 console.log(`Manifest OK: ${m.packs.length} gói, ${m.voices.length} giọng, version ${m.version}`);

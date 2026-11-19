@@ -39,16 +39,6 @@ public enum PackStore {
         return nil
     }
 
-    /// 2.1.0: assets engine Nano GẮN SẴN trong app (thư mục NanoAssets ở
-    /// bundle) — model flow VieNeu-TTS v3 Nano, mở app là nghe mượt ngay.
-    public static func nanoAssetsURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "NanoAssets", withExtension: nil),
-           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
-            return bundled
-        }
-        return nil
-    }
-
     public static func installedPacks() -> [[String: Any]] {
         ensureRoot()
         let fm = FileManager.default

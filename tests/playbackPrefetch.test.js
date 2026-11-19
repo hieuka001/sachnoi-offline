@@ -58,53 +58,72 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
-test("2.1.0: thuần VieNeu — Nano (mượt) + Turbo (25 giọng), sherpa/Piper đã gỡ", () => {
+test("2.2.0: Nano đã gỡ hẳn — thuần Turbo, không còn định tuyến/assets Nano", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
   const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
-  assert.ok(server.includes("NanoEngine"), "TtsServer chưa định tuyến engine Nano");
+  assert.ok(!existsSync(join(pluginDir, "NanoEngine.swift")), "NanoEngine.swift phải đã xoá (2.2.0 bỏ Nano)");
+  assert.ok(!server.includes("NanoEngine"), "TtsServer vẫn còn định tuyến engine Nano");
+  assert.ok(!server.includes("nanoPrefix"), "TtsServer vẫn còn tiền tố nano/");
+  assert.ok(!server.includes("getNanoEngine"), "TtsServer vẫn còn getNanoEngine");
   assert.ok(server.includes("VieNeuEngine"), "TtsServer thiếu hồ engine Turbo");
-  assert.ok(server.includes("nano/"), "TtsServer thiếu tiền tố định tuyến nano/");
   assert.ok(!server.includes("NWListener"), "TtsServer vẫn còn server HTTP thừa");
-  assert.ok(!server.includes("SherpaTts"), "TtsServer vẫn còn sherpa/Piper (2.1.0 thuần VieNeu)");
-  const nano = readFileSync(join(pluginDir, "NanoEngine.swift"), "utf8");
-  assert.ok(nano.includes("vector_estimator.onnx"), "NanoEngine thiếu graph vector_estimator");
-  assert.ok(nano.includes("duration_predictor.onnx"), "NanoEngine thiếu duration_predictor");
-  assert.ok(nano.includes("codec_decoder.onnx"), "NanoEngine thiếu codec_decoder");
-  assert.ok(nano.includes("phonemizeWithEmotions"), "NanoEngine phải dùng chung Phonemizer với Turbo");
-  assert.ok(nano.includes("trimAndFade"), "NanoEngine thiếu trim_and_fade như bản tham chiếu");
+  assert.ok(!server.includes("SherpaTts"), "TtsServer vẫn còn sherpa/Piper");
+  const packStore = readFileSync(join(pluginDir, "PackStore.swift"), "utf8");
+  assert.ok(!packStore.includes("nanoAssetsURL"), "PackStore vẫn còn nanoAssetsURL");
+  const plugin = readFileSync(join(pluginDir, "SachNoiBridgePlugin.swift"), "utf8");
+  assert.ok(!plugin.includes("nanoVoiceList"), "plugin vẫn còn nanoVoiceList");
   for (const back of ["VieNeuEngine.swift", "Phonemizer.swift", "SpeechUtils.swift", "SeaG2p.swift", "BpeTokenizer.swift"]) {
-    assert.ok(existsSync(join(pluginDir, back)), `${back} phải được khôi phục cho Turbo`);
+    assert.ok(existsSync(join(pluginDir, back)), `${back} phải còn cho Turbo`);
   }
   assert.ok(!existsSync(join(pluginDir, "SherpaTts.swift")), "SherpaTts.swift phải đã xoá");
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
   assert.ok(podspec.includes("dependency 'onnxruntime-objc'"), "podspec thiếu onnxruntime-objc");
   assert.ok(podspec.includes("libsea_g2p_rs.a"), "podspec thiếu libsea_g2p_rs.a");
   assert.ok(!podspec.includes("SherpaOnnxC"), "podspec vẫn còn sherpa");
-  const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
-  assert.equal(manifest.voices.length, 36, "manifest phải có 36 giọng (11 Nano + 25 Turbo)");
-  assert.equal(manifest.voices.filter((v) => v.id.startsWith("nano/")).length, 11, "thiếu giọng Nano trong manifest");
+  const pbx = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
+  assert.ok(!pbx.includes("NanoAssets"), "pbxproj vẫn còn NanoAssets");
 });
 
-test("2.1.1: ctx_mask đi đường uint8 (graph vá vieneu-nano-v2) — cấm quay lại tensor bool", () => {
+test("2.2.0: đúng 10 giọng Turbo cho 3 miền — Swift và manifest phải khớp", () => {
   const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
-  const nano = readFileSync(join(pluginDir, "NanoEngine.swift"), "utf8");
-  // onnxruntime-objc 1.20.0 không tạo được tensor bool: bản 2.1.0 ép
-  // rawValue 9 -> máy thật văng 'unsupported tensor element type'.
-  assert.ok(nano.includes("uint8Tensor"), "NanoEngine phải tạo ctx_mask bằng uint8Tensor");
-  assert.ok(nano.includes("elementType: .uInt8"), "uint8Tensor phải dùng elementType .uInt8 (case Swift của ORTTensorElementDataTypeUInt8, rawValue 3)");
-  assert.ok(!nano.includes("elementType: .uint8"), "NanoEngine còn .uint8 — case này không tồn tại trong onnxruntime-objc 1.20.0");
-  assert.ok(!nano.includes("boolTensor"), "NanoEngine còn boolTensor (đường bool đã chết trên iOS)");
-  assert.ok(!nano.includes("ORTTensorElementDataType(rawValue: 9)"), "NanoEngine còn ép rawValue 9 cho tensor bool");
-  const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
-  const nanoPack = manifest.packs.find((p) => p.id === "vieneu-nano");
-  assert.ok(nanoPack, "thiếu pack vieneu-nano trong manifest");
-  for (const f of nanoPack.files) {
-    assert.ok(f.url.includes("/vieneu-nano-v2/"), `file Nano ${f.name} chưa trỏ release v2 (graph đã vá ctx_mask)`);
+  const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
+  const expected = ["Trúc Ly", "Ngọc Huyền", "Hải Đăng", "Phạm Tuyên", "Ngọc Trân", "Quang Sơn", "Thùy Dung", "Mỹ Duyên", "Thái Sơn", "Đức Trí"];
+  for (const name of expected) {
+    assert.ok(server.includes(`"${name}"`), `TtsServer.allowedVoices thiếu giọng ${name}`);
   }
-  const dur = nanoPack.files.find((f) => f.name === "duration_predictor.onnx");
-  assert.equal(dur.sha256, "fa9ddef2db0d182826ce469adfc80694a2eeb71b501632cb4424cc6928889602", "duration_predictor phải là bản vá v2");
-  const ve = nanoPack.files.find((f) => f.name === "vector_estimator.onnx");
-  assert.equal(ve.sha256, "3c80e1245678aaae4121ffdd4246b6f73ab288b75b8c7e0cab9c331237418a38", "vector_estimator phải là bản vá v2");
+  assert.ok(server.includes("resolveVoice"), "TtsServer thiếu resolveVoice (giọng lạ -> mặc định)");
+  assert.ok(server.includes('defaultVoice = "Trúc Ly"'), "giọng mặc định phải là Trúc Ly");
+  const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
+  assert.equal(manifest.voices.length, 10, "manifest phải có đúng 10 giọng");
+  assert.deepEqual(manifest.voices.map((v) => v.id).sort(), [...expected].sort(), "manifest và Swift lệch danh sách giọng");
+  assert.ok(manifest.voices.every((v) => v.engine === "vieneu-turbo"), "còn giọng không phải Turbo trong manifest");
+  const byRegion = (r) => manifest.voices.filter((v) => v.region === r).length;
+  assert.equal(byRegion("Miền Bắc"), 4, "phải có 4 giọng Bắc");
+  assert.equal(byRegion("Miền Trung"), 2, "phải có 2 giọng Trung (bộ preset chỉ có 2)");
+  assert.equal(byRegion("Miền Nam"), 4, "phải có 4 giọng Nam");
+  assert.ok(!manifest.packs.some((p) => p.id === "vieneu-nano"), "manifest vẫn còn pack vieneu-nano");
+});
+
+test("2.2.0: render trước cả cuốn — RenderStore + BookRenderer + NativePlayer đọc từ file", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const store = readFileSync(join(pluginDir, "RenderStore.swift"), "utf8");
+  assert.ok(store.includes("TTSRender"), "RenderStore phải lưu ở SachNoi/TTSRender");
+  assert.ok(store.includes("kAudioFormatMPEG4AAC"), "RenderStore phải nén AAC (WAV thô tốn ~345MB/giờ)");
+  assert.ok(store.includes("saveWav"), "RenderStore thiếu saveWav");
+  assert.ok(store.includes("evictIfNeeded"), "RenderStore thiếu trần dung lượng + dọn sách cũ");
+  const renderer = readFileSync(join(pluginDir, "BookRenderer.swift"), "utf8");
+  assert.ok(renderer.includes("priorityEnd"), "BookRenderer thiếu tính ranh giới ưu tiên theo chương");
+  assert.ok(renderer.includes("chaptersSeen > 2"), "ưu tiên phải là chương hiện tại + 2 chương kế (đệm 2–3 chương)");
+  assert.ok(renderer.includes("thermalState"), "BookRenderer phải nhường khi máy quá nóng (thermal)");
+  assert.ok(renderer.includes("synthesizeSync"), "BookRenderer phải tổng hợp qua TtsServer");
+  assert.ok(swift.includes("RenderStore.exists"), "NativePlayer phải ưu tiên file đã render trước khi sinh trực tiếp");
+  assert.ok(swift.includes("BookRenderer.shared"), "NativePlayer phải gắn BookRenderer");
+  assert.ok(swift.includes("persistRender"), "NativePlayer phải lưu đoạn sinh trực tiếp vào kho render");
+  assert.ok(swift.includes("makeBufferFromFile"), "NativePlayer thiếu giải mã file đã render");
+  const plugin = readFileSync(join(pluginDir, "SachNoiBridgePlugin.swift"), "utf8");
+  assert.ok(plugin.includes("bookId"), "plugin phải chuyển bookId vào player.load");
+  const playerJs = readFileSync(join(root, "web-src/lib/player.js"), "utf8");
+  assert.ok(playerJs.includes("bookId"), "player.js phải gửi bookId khi ttsPlay");
 });
 
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {

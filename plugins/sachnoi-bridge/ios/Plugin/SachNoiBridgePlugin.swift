@@ -117,14 +117,16 @@ public class SachNoiBridgePlugin: CAPPlugin {
 
     // MARK: - TTS
     @objc func ttsVoices(_ call: CAPPluginCall) {
-        // 2.1.0: gộp hai engine VieNeu — 25 giọng Turbo (từ file preset,
-        // không cần dựng engine) + 11 giọng Nano (id "nano/<tên>").
+        // 2.2.0: thuần VieNeu Turbo — chỉ 10 giọng đã chọn cho 3 miền (từ
+        // file preset, không cần dựng engine), đúng thứ tự TtsServer.allowedVoices.
         DispatchQueue.global(qos: .userInitiated).async {
             var voices: [[String: String]] = []
             if let store = try? TtsServer.shared.getVoiceStore() {
-                voices += store.presets.map { ["id": $0.name, "name": $0.label, "language": "vi"] }
+                let byName = Dictionary(uniqueKeysWithValues: store.presets.map { ($0.name, $0) })
+                voices = TtsServer.allowedVoices.compactMap { name in
+                    byName[name].map { ["id": $0.name, "name": $0.label, "language": "vi"] }
+                }
             }
-            voices += TtsServer.shared.nanoVoiceList()
             if voices.isEmpty {
                 call.reject("Chưa có gói giọng nào trong app")
             } else {
@@ -277,9 +279,12 @@ public class SachNoiBridgePlugin: CAPPlugin {
             .map { NativePlayer.Item(text: ($0["t"] as? String) ?? "", chapter: ($0["c"] as? String) ?? "", paraEnd: ($0["p"] as? NSNumber)?.boolValue ?? false, cont: ($0["k"] as? NSNumber)?.boolValue ?? false) }
             .filter { !$0.text.isEmpty }
         guard !items.isEmpty else { call.reject("Không có câu nào để đọc"); return }
+        // 2.2.0: bookId + cài đặt âm thanh đi cùng load để NativePlayer tính
+        // khoá render và gắn BookRenderer (render trước) ngay từ đầu.
+        let audio = call.getObject("audio").map { Self.audioSettings(from: $0) }
         player.load(items: items, voice: call.getString("voice") ?? "default",
-                    title: call.getString("title") ?? "", author: call.getString("author") ?? "")
-        if let audio = call.getObject("audio") { player.setAudio(Self.audioSettings(from: audio)) }
+                    title: call.getString("title") ?? "", author: call.getString("author") ?? "",
+                    bookId: call.getString("bookId") ?? "", audio: audio)
         player.play(from: call.getInt("startIndex") ?? 0)
         call.resolve(["ok": true, "count": items.count])
     }

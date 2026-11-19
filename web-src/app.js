@@ -704,7 +704,7 @@ async function renderVoices() {
   }
   const packHtml = (p) => {
     const isIn = installed.has(p.id);
-    const isBundledCore = (p.id === "vieneu-turbo-int8" || p.id === "vieneu-nano") && !!state.coreBundled;
+    const isBundledCore = p.id === "vieneu-turbo-int8" && !!state.coreBundled;
     const size = p.files.reduce((a, f) => a + (f.size || 0), 0);
     return `<div class="card" style="margin-bottom:10px">
       <div class="row between"><h4>${escapeHtml(p.name)}</h4><span class="chip ${isIn || isBundledCore ? "ok" : ""}">${isBundledCore ? "✓ Có sẵn trong app" : isIn ? "✓ Đã tải" : formatBytes(size)}</span></div>

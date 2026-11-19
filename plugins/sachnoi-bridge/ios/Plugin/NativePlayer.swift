@@ -30,9 +30,15 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     public var onState: ((_ playing: Bool) -> Void)?
     public var onEnded: (() -> Void)?
 
+    /// 2.2.0: nguồn âm thanh của một đoạn — WAV vừa tổng hợp trực tiếp trong
+    /// bộ nhớ, hoặc file AAC đã RENDER TRƯỚC trên đĩa (RenderStore).
+    private enum AudioSource { case data(Data), file(URL) }
+
     private let queue = DispatchQueue(label: "app.sachnoi.player", qos: .userInitiated)
     private var items: [Item] = []
     private var voice: String = "default"
+    private var bookId: String = ""
+    private var renderKey: String = ""
     private var bookTitle: String = ""
     private var bookAuthor: String = ""
     private(set) var index: Int = -1
@@ -54,7 +60,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
 
     // AVAudioPlayer (đường dự phòng)
     private var audioPlayer: AVAudioPlayer?
-    private var fallbackDatas: [Data] = []
+    private var fallbackDatas: [AudioSource] = []
     private var fallbackClause: Int = 0
     private var fallbackGen: Int = 0
 
@@ -65,15 +71,21 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     public var currentIndex: Int { index }
 
     // MARK: - Điều khiển từ plugin / remote / ngắt quãng
-    public func load(items: [Item], voice: String, title: String, author: String) {
+    /// 2.2.0: load kèm bookId + cài đặt âm thanh để tính khoá render và gắn
+    /// BookRenderer vào đúng cuốn sách ngay từ đầu (render trước 2–3 chương
+    /// rồi render cả cuốn trong lúc phát).
+    public func load(items: [Item], voice: String, title: String, author: String, bookId: String = "", audio: AudioSettings? = nil) {
         queue.async { [weak self] in
             guard let self else { return }
             self.stopInternal(notify: false)
             self.items = items
             self.voice = voice
+            self.bookId = bookId
             self.bookTitle = title
             self.bookAuthor = author
             self.index = -1
+            if let audio { self.applyAudio(audio) }
+            self.rekeyRenderer(playIndex: 0)
         }
     }
 
@@ -81,10 +93,41 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         queue.async { [weak self] in
             guard let self, !self.items.isEmpty else { return }
             self.index = min(max(0, startIndex), self.items.count - 1)
+            BookRenderer.shared.setPlayIndex(self.index)
             self.playing = true
             self.startCurrent()
             self.emitState()
         }
+    }
+
+    /// Khoá render hiện tại theo (sách, giọng, khoảng nghỉ) + gắn renderer.
+    private func rekeyRenderer(playIndex: Int) {
+        renderKey = bookId.isEmpty ? "" : RenderStore.key(
+            bookId: bookId, voice: TtsServer.resolveVoice(voice),
+            gapPunct: settings.gapPunct, gapParagraph: settings.gapParagraph)
+        guard !renderKey.isEmpty else { return }
+        BookRenderer.shared.configure(
+            key: renderKey,
+            items: items.map { (text: $0.text, chapter: $0.chapter) },
+            voice: TtsServer.resolveVoice(voice),
+            playIndex: playIndex)
+    }
+
+    /// Lưu WAV vừa tổng hợp trực tiếp vào kho render (nền, bỏ qua lỗi) —
+    /// đoạn đã nghe không bao giờ phải sinh lại.
+    private func persistRender(idx: Int, wav: Data) {
+        let key = renderKey
+        guard !key.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            try? RenderStore.saveWav(key, idx, wav: wav)
+        }
+    }
+
+    private func applyAudio(_ s: AudioSettings) {
+        settings = s
+        node.volume = s.volume
+        timePitch.pitch = s.pitchCents
+        if let p = audioPlayer { p.volume = s.volume }
     }
 
     public func pause() {
@@ -146,6 +189,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             let target = self.index + delta
             guard target >= 0, target < self.items.count else { return }
             self.index = target
+            BookRenderer.shared.setPlayIndex(target)
             if self.playing { self.startCurrent() }
             else { self.emitSentence(); self.updateNowPlaying() }
         }
@@ -155,6 +199,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         queue.async { [weak self] in
             guard let self, target >= 0, target < self.items.count else { return }
             self.index = target
+            BookRenderer.shared.setPlayIndex(target)
             if self.playing { self.startCurrent() }
             else { self.emitSentence(); self.updateNowPlaying() }
         }
@@ -172,10 +217,15 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     public func setAudio(_ s: AudioSettings) {
         queue.async { [weak self] in
             guard let self else { return }
-            self.settings = s
-            self.node.volume = s.volume
-            self.timePitch.pitch = s.pitchCents
-            if let p = self.audioPlayer { p.volume = s.volume }
+            // 2.2.0: đổi khoảng nghỉ = đổi audio đã render (nghỉ nướng trong
+            // engine) -> đổi khoá render + render lại theo khoá mới.
+            let gapsChanged = s.gapPunct != self.settings.gapPunct || s.gapParagraph != self.settings.gapParagraph
+            self.applyAudio(s)
+            if gapsChanged, !self.items.isEmpty {
+                self.cache.removeAll()
+                self.rekeyRenderer(playIndex: max(0, self.index))
+                if self.playing, self.index >= 0 { self.startCurrent() }
+            }
         }
     }
 
@@ -184,6 +234,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             guard let self else { return }
             self.voice = newVoice
             self.cache.removeAll()
+            if !self.items.isEmpty { self.rekeyRenderer(playIndex: max(0, self.index)) }
             if self.playing, self.index >= 0 { self.startCurrent() }
         }
     }
@@ -253,39 +304,47 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             // hết 1 đoạn lại ngưng lâu chờ tổng hợp). Dấu câu bên trong đoạn
             // do engine tự xử lý khi phiên âm; khoảng nghỉ tại ranh giới đoạn
             // dùng chung gapPunct.
+            // 2.2.0: thứ tự lấy âm thanh của một đoạn — (1) bộ nhớ đệm của
+            // phiên, (2) FILE ĐÃ RENDER TRƯỚC trên đĩa (đường chính: phát
+            // không phụ thuộc tốc độ sinh), (3) sinh trực tiếp như cũ rồi
+            // lưu luôn vào kho render cho lần sau.
             let key = "\(idx)"
-            var datas: [Data] = []
-            var ok = true
+            var sources: [AudioSource] = []
             if let d = self.cache[key] {
-                datas = [d]
+                sources = [.data(d)]
+            } else if RenderStore.exists(self.renderKey, idx) {
+                sources = [.file(RenderStore.fileURL(self.renderKey, idx))]
             } else if let d = try? TtsServer.shared.synthesizeSync(text: item.text, voice: self.voice) {
                 self.cache[key] = d
-                datas = [d]
-            } else { ok = false }
+                self.persistRender(idx: idx, wav: d)
+                sources = [.data(d)]
+            }
             DispatchQueue.main.async { BackgroundAudio.shared.endBackgroundAssertion() }
             guard gen == self.generation, self.playing, self.index == idx else { return }
-            guard ok, !datas.isEmpty else {
+            guard !sources.isEmpty else {
                 // Tổng hợp lỗi 1 câu: bỏ qua câu đó, đọc câu tiếp để không chết cả sách
                 self.advance()
                 return
             }
-            // 1.9.3 (P0-B): nhìn trước 5 đoạn thay vì 2 — tổng hợp chậm biến thiên
-            // thì vẫn còn đệm, không im lặng chờ giữa câu.
+            // Đệm bộ nhớ 5 đoạn kế (renderer chạy nền đã lo phần sâu hơn:
+            // 2–3 chương trước mắt rồi cả cuốn).
             for n in 1...5 { self.prefetch(next: idx + n) }
             self.trimCache(around: idx)
             if self.useEngine {
-                if !self.scheduleOnEngine(datas: datas, item: item, gen: gen, idx: idx) {
+                if !self.scheduleOnEngine(sources: sources, item: item, gen: gen, idx: idx) {
                     self.useEngine = false // rơi về AVAudioPlayer cho cả phiên
-                    self.playFallback(datas: datas, item: item, gen: gen, idx: idx)
+                    self.playFallback(sources: sources, item: item, gen: gen, idx: idx)
                 }
             } else {
-                self.playFallback(datas: datas, item: item, gen: gen, idx: idx)
+                self.playFallback(sources: sources, item: item, gen: gen, idx: idx)
             }
         }
     }
 
     private func prefetch(next nextIdx: Int) {
         guard nextIdx < items.count else { return }
+        // Đã có file render thì startCurrent đọc thẳng từ đĩa — khỏi đệm.
+        if RenderStore.exists(renderKey, nextIdx) { return }
         let v = voice
         let text = items[nextIdx].text
         // 1.9.3 (P0-B): prefetch chạy ở QoS .default thay vì .utility để
@@ -297,6 +356,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
             self?.queue.sync { exists = self?.cache[key] != nil }
             if exists { return }
             if let d = try? TtsServer.shared.synthesizeSync(text: text, voice: v) {
+                self?.persistRender(idx: nextIdx, wav: d)
                 self?.queue.async { if self?.cache[key] == nil { self?.cache[key] = d } }
             }
         }
@@ -402,12 +462,30 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         return buffer
     }
 
+    /// Đọc file audio đã render (AAC .m4a) thành buffer trong bộ nhớ.
+    private func makeBufferFromFile(_ url: URL) -> AVAudioPCMBuffer? {
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let format = file.processingFormat
+            let frames = AVAudioFrameCount(file.length)
+            guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+            try file.read(into: buffer)
+            buffer.frameLength = frames
+            return buffer
+        } catch { return nil }
+    }
+
     /// Xếp lịch: [buffer đoạn, nghỉ cuối đoạn]. Hoàn thành phát của buffer
     /// CUỐI mới chuyển câu. Trả false nếu engine lỗi.
-    private func scheduleOnEngine(datas: [Data], item: Item, gen: Int, idx: Int) -> Bool {
+    private func scheduleOnEngine(sources: [AudioSource], item: Item, gen: Int, idx: Int) -> Bool {
         var buffers: [AVAudioPCMBuffer] = []
-        for d in datas {
-            guard let b = makeBuffer(from: d) else { return false }
+        for s in sources {
+            let b: AVAudioPCMBuffer?
+            switch s {
+            case .data(let d): b = makeBuffer(from: d)
+            case .file(let url): b = makeBufferFromFile(url)
+            }
+            guard let b else { return false }
             buffers.append(b)
         }
         guard let format = buffers.first?.format, ensureEngine(format: format) else { return false }
@@ -437,16 +515,23 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     // MARK: - Đường AVAudioPlayer (dự phòng khi engine lỗi)
-    private func playFallback(datas: [Data], item: Item, gen: Int, idx: Int) {
-        fallbackDatas = datas
+    private func playFallback(sources: [AudioSource], item: Item, gen: Int, idx: Int) {
+        fallbackDatas = sources
         fallbackClause = 0
         fallbackGen = gen
         playFallbackClause(item: item, gen: gen, idx: idx)
     }
 
+    private func makeFallbackPlayer(_ source: AudioSource) -> AVAudioPlayer? {
+        switch source {
+        case .data(let d): return try? AVAudioPlayer(data: d)
+        case .file(let url): return try? AVAudioPlayer(contentsOf: url)
+        }
+    }
+
     private func playFallbackClause(item: Item, gen: Int, idx: Int) {
         guard fallbackClause < fallbackDatas.count,
-              let player = try? AVAudioPlayer(data: fallbackDatas[fallbackClause]) else {
+              let player = makeFallbackPlayer(fallbackDatas[fallbackClause]) else {
             // Hết đoạn: chờ khoảng nghỉ rồi chuyển (đường này không chèn được
             // buffer im lặng nên dùng hẹn giờ trên hàng đợi phát)
             let gap = item.paraEnd ? settings.gapParagraph : settings.gapPunct
@@ -510,6 +595,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         }
         if index + 1 >= items.count { finishBook(); return }
         index += 1
+        BookRenderer.shared.setPlayIndex(index)
         startCurrent()
     }
 
