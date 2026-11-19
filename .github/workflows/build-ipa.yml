@@ -44,9 +44,13 @@ jobs:
           echo "6b8e769cb153343270fdccbe92e3b3db0d1c421d67fa0989ab01fdf5b2fcf2de  /tmp/sherpa-ios.zip" | shasum -a 256 -c -
           rm -rf /tmp/sherpa-ios && unzip -q /tmp/sherpa-ios.zip -d /tmp/sherpa-ios
           mkdir -p plugins/sachnoi-bridge/ios/Frameworks
-          rm -rf plugins/sachnoi-bridge/ios/Frameworks/sherpa-onnx.xcframework
-          cp -R /tmp/sherpa-ios/sherpa-onnx.xcframework plugins/sachnoi-bridge/ios/Frameworks/
-          ls plugins/sachnoi-bridge/ios/Frameworks/sherpa-onnx.xcframework
+          # QUAN TRỌNG: framework bên trong tên là SherpaOnnxC.framework nhưng
+          # gói tên sherpa-onnx.xcframework — CocoaPods lấy tên gói làm cờ
+          # -framework khi link nên báo "framework 'sherpa-onnx' not found".
+          # Đổi tên gói theo đúng framework bên trong là hết.
+          rm -rf plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
+          cp -R /tmp/sherpa-ios/sherpa-onnx.xcframework plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
+          ls plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
 
       # Model Piper vi_VN-vais1000-medium từ Release piper-vi-v1 của chính
       # repo này (nguồn gốc: huggingface csukuangfj/vits-piper-vi_VN-vais1000-medium).

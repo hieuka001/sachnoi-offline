@@ -72,7 +72,7 @@ test("2.0.0: lõi sherpa-onnx + Piper thay engine VieNeu tự port (đã xoá)",
     assert.ok(!existsSync(join(pluginDir, gone)), `${gone} phải đã xoá`);
   }
   const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
-  assert.ok(podspec.includes("sherpa-onnx.xcframework"), "podspec chưa khai sherpa xcframework");
+  assert.ok(podspec.includes("SherpaOnnxC.xcframework"), "podspec chưa khai sherpa xcframework (tên theo framework bên trong)");
   assert.ok(!podspec.includes("dependency 'onnxruntime-objc'"), "podspec vẫn còn dependency onnxruntime-objc");
 });
 

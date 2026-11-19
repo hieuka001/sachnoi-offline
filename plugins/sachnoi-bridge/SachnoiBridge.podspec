@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
   # 2.0.0: TTS dùng sherpa-onnx (xcframework tĩnh chính thức của k2-fsa,
   # CI tải về ios/Frameworks trước khi pod install) thay cho onnxruntime-objc
   # + libsea_g2p_rs.a của engine VieNeu tự port đã xoá.
-  s.vendored_frameworks = 'ios/Frameworks/sherpa-onnx.xcframework'
+  s.vendored_frameworks = 'ios/Frameworks/SherpaOnnxC.xcframework'
   s.libraries = 'c++'
   s.swift_version = '5.1'
 end
