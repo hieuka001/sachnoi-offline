@@ -17,10 +17,8 @@ end
 target 'App' do
   capacitor_pods
   # Add your Pods here
-  # Phụ thuộc tĩnh (XCFramework) phải khai trực tiếp ở target App, nếu không
-  # CocoaPods báo "transitive dependencies that include statically linked binaries"
-  # vì nó đến gián tiếp qua plugin SachnoiBridge.
-  pod 'onnxruntime-objc', '~> 1.20.0'
+  # 2.0.0: onnxruntime-objc (của engine VieNeu đã xoá) bỏ khỏi đây; sherpa-onnx
+  # đi qua vendored_frameworks của plugin SachnoiBridge là đủ (pod install OK).
 end
 
 post_install do |installer|

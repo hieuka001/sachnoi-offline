@@ -30,7 +30,8 @@ final class SherpaTtsEngine {
     /// Tên hiển thị ở Chẩn đoán để đối chiếu bản thư viện/model đang chạy.
     static let kind = "sherpa-onnx 1.13.8 · Piper vi_VN-vais1000-medium"
 
-    private var tts: UnsafePointer<SherpaOnnxOfflineTts>?
+    /// Handle C của sherpa: struct mờ (opaque) nên Swift giữ bằng OpaquePointer.
+    private var tts: OpaquePointer?
     let sampleRate: Int
 
     init(assetsDir: URL) throws {
@@ -74,10 +75,10 @@ final class SherpaTtsEngine {
         defer { SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio) }
         let n = Int(audio.pointee.n)
         let rate = Int(audio.pointee.sample_rate)
-        guard n > 0, let src = audio.pointee.samples else {
+        guard n > 0, let src: UnsafePointer<Float> = audio.pointee.samples else {
             return Self.wavData([], sampleRate: rate > 0 ? rate : sampleRate)
         }
-        let samples = Array(UnsafeBufferPointer(start: src, count: n))
+        let samples = [Float](UnsafeBufferPointer(start: src, count: n))
         return Self.wavData(samples, sampleRate: rate)
     }
 
