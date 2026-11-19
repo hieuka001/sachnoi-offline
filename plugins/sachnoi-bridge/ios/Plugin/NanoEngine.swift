@@ -180,7 +180,7 @@ final class NanoEngine {
         nullSpkTensor = try Self.floatTensor(nullSpk, [1, 192])
         nullStyleTensor = try Self.floatTensor(nullStyle, [1, 50, 256])
         let nullIds = try Self.int64Tensor([bos, eos], [1, 2])
-        nullMaskTensor = try Self.boolTensor([1, 1], [1, 2])
+        nullMaskTensor = try Self.uint8Tensor([1, 1], [1, 2])
         let nullOut = try Self.run(sessText, ["ids": nullIds, "style": nullStyleTensor], cache: nil)
         guard let ctx = nullOut.values.first else { throw EngineError.ort("text_encoder không trả ctx (null)") }
         nullCtx = ctx
@@ -220,7 +220,7 @@ final class NanoEngine {
         }
         ids.append(eos)
         let idsT = try Self.int64Tensor(ids, [1, ids.count])
-        let maskT = try Self.boolTensor([UInt8](repeating: 1, count: ids.count), [1, ids.count])
+        let maskT = try Self.uint8Tensor([UInt8](repeating: 1, count: ids.count), [1, ids.count])
 
         let ctxOut = try Self.run(sessText, ["ids": idsT, "style": style], cache: nil)
         guard let ctx = ctxOut.values.first else { throw EngineError.ort("text_encoder không trả ctx") }
@@ -377,15 +377,16 @@ final class NanoEngine {
         return try ORTValue(tensorData: md, elementType: .int64, shape: shape.map { NSNumber(value: $0) })
     }
 
-    static func boolTensor(_ data: [UInt8], _ shape: [Int]) throws -> ORTValue {
-        // onnxruntime-objc 1.20.0 không đặt tên case Bool cho
-        // ORTTensorElementDataType — dùng rawValue 9 (= ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL,
-        // khớp cả enum ObjC lẫn C API) để tạo tensor bool cho ctx_mask.
-        guard let boolType = ORTTensorElementDataType(rawValue: 9) else {
-            throw EngineError.ort("onnxruntime không hỗ trợ tensor bool")
-        }
+    static func uint8Tensor(_ data: [UInt8], _ shape: [Int]) throws -> ORTValue {
+        // ctx_mask: onnxruntime-objc 1.20.0 KHÔNG tạo được tensor bool
+        // (enum thiếu case .bool; ép rawValue 9 thì runtime văng
+        // "unsupported tensor element type" — phán quyết máy thật 2.1.0).
+        // Hai graph nhận mask (duration_predictor, vector_estimator) đã
+        // được vá ở release vieneu-nano-v2: input ctx_mask là UINT8, node
+        // Cast(bool) ở đầu graph khôi phục mask bool bên trong — kết quả
+        // số học giống hệt bản gốc (đã kiểm chứng bằng onnxruntime CPU).
         let md = NSMutableData(bytes: data, length: data.count)
-        return try ORTValue(tensorData: md, elementType: boolType, shape: shape.map { NSNumber(value: $0) })
+        return try ORTValue(tensorData: md, elementType: .uint8, shape: shape.map { NSNumber(value: $0) })
     }
 
     static func readFloats(_ value: ORTValue) throws -> [Float] {

@@ -85,6 +85,27 @@ test("2.1.0: thuần VieNeu — Nano (mượt) + Turbo (25 giọng), sherpa/Pipe
   assert.equal(manifest.voices.filter((v) => v.id.startsWith("nano/")).length, 11, "thiếu giọng Nano trong manifest");
 });
 
+test("2.1.1: ctx_mask đi đường uint8 (graph vá vieneu-nano-v2) — cấm quay lại tensor bool", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const nano = readFileSync(join(pluginDir, "NanoEngine.swift"), "utf8");
+  // onnxruntime-objc 1.20.0 không tạo được tensor bool: bản 2.1.0 ép
+  // rawValue 9 -> máy thật văng 'unsupported tensor element type'.
+  assert.ok(nano.includes("uint8Tensor"), "NanoEngine phải tạo ctx_mask bằng uint8Tensor");
+  assert.ok(nano.includes("elementType: .uint8"), "uint8Tensor phải dùng elementType .uint8");
+  assert.ok(!nano.includes("boolTensor"), "NanoEngine còn boolTensor (đường bool đã chết trên iOS)");
+  assert.ok(!nano.includes("ORTTensorElementDataType(rawValue: 9)"), "NanoEngine còn ép rawValue 9 cho tensor bool");
+  const manifest = JSON.parse(readFileSync(join(root, "voices/voices.json"), "utf8"));
+  const nanoPack = manifest.packs.find((p) => p.id === "vieneu-nano");
+  assert.ok(nanoPack, "thiếu pack vieneu-nano trong manifest");
+  for (const f of nanoPack.files) {
+    assert.ok(f.url.includes("/vieneu-nano-v2/"), `file Nano ${f.name} chưa trỏ release v2 (graph đã vá ctx_mask)`);
+  }
+  const dur = nanoPack.files.find((f) => f.name === "duration_predictor.onnx");
+  assert.equal(dur.sha256, "fa9ddef2db0d182826ce469adfc80694a2eeb71b501632cb4424cc6928889602", "duration_predictor phải là bản vá v2");
+  const ve = nanoPack.files.find((f) => f.name === "vector_estimator.onnx");
+  assert.equal(ve.sha256, "3c80e1245678aaae4121ffdd4246b6f73ab288b75b8c7e0cab9c331237418a38", "vector_estimator phải là bản vá v2");
+});
+
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
   assert.ok(html.includes("<h3>Giọng đọc</h3>"), "tiêu đề tab Giọng phải là 'Giọng đọc'");

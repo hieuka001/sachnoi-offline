@@ -175,6 +175,9 @@ final class TtsServer {
             return created
         } catch {
             setNanoState(.failed(error.localizedDescription))
+            // Giữ lại các bước init đã chạy trước khi lỗi để tab Chẩn đoán
+            // chỉ ra engine chết ở bước nào (2.1.0 mất dấu vết này).
+            stateLock.lock(); nanoInitStepsText = NanoEngine.lastInitSteps; stateLock.unlock()
             setEngineError(error.localizedDescription)
             throw error
         }
