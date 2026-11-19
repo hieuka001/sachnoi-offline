@@ -386,7 +386,7 @@ final class NanoEngine {
         // Cast(bool) ở đầu graph khôi phục mask bool bên trong — kết quả
         // số học giống hệt bản gốc (đã kiểm chứng bằng onnxruntime CPU).
         let md = NSMutableData(bytes: data, length: data.count)
-        return try ORTValue(tensorData: md, elementType: .uint8, shape: shape.map { NSNumber(value: $0) })
+        return try ORTValue(tensorData: md, elementType: .uInt8, shape: shape.map { NSNumber(value: $0) })
     }
 
     static func readFloats(_ value: ORTValue) throws -> [Float] {
