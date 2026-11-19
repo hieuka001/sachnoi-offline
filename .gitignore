@@ -9,4 +9,5 @@ ios/App/App/public/*
 ios/App/Pods/
 plugins/sachnoi-bridge/ios/Plugin/vendor/
 .DS_Store
-ios/App/App/TTSAssets/
+ios/App/App/PiperAssets/
+plugins/sachnoi-bridge/ios/Frameworks/

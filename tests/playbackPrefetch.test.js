@@ -7,7 +7,7 @@
 // trên iPhone — đây là giả thuyết kỹ thuật tốt nhất kiểm chứng được ngoài máy.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -58,29 +58,27 @@ test("1.9.4: một cài đặt nghỉ dấu câu chung ở cả web + plugin", (
   assert.ok(plugin.includes('"gapPunct"'), "plugin chưa nhận gapPunct");
 });
 
-test("1.9.5: TtsServer có hồ 2 engine song song, bỏ hàng đợi serial", () => {
-  const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
-  assert.ok(server.includes("acquireEngine"), "thiếu acquireEngine (hồ engine)");
-  assert.ok(server.includes("idleEngines"), "thiếu idleEngines (hồ engine)");
-  assert.ok(server.includes("maxEngines"), "thiếu maxEngines");
-  assert.ok(!server.includes("synthQueue.sync"), "synthesizeSync vẫn serial qua synthQueue — hồ không chạy song song được");
-  const engine = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/VieNeuEngine.swift"), "utf8");
-  assert.ok(engine.includes("outputNamesCache"), "thiếu cache outputNames trong VieNeuEngine");
-  assert.ok(engine.includes("lastSynthSteps"), "thiếu đo thời gian từng pha (lastSynthSteps)");
-});
-
-test("1.9.6: luồng riêng từng session ONNX + chẩn đoán khung hình/nhiệt", () => {
-  const engine = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/VieNeuEngine.swift"), "utf8");
-  assert.ok(engine.includes('makeSession("vieneu_acoustic_cached.onnx", .all, 1)'), "acoustic phải 1 luồng");
-  assert.ok(engine.includes('makeSession("vieneu_decode_step.onnx", .basic, 2)'), "decode phải 2 luồng");
-  assert.ok(engine.includes("lastFrames"), "thiếu đếm khung hình cho chẩn đoán");
-  const server = readFileSync(join(root, "plugins/sachnoi-bridge/ios/Plugin/TtsServer.swift"), "utf8");
-  assert.ok(server.includes("thermalState"), "thiếu trạng thái nhiệt trong chẩn đoán");
+test("2.0.0: lõi sherpa-onnx + Piper thay engine VieNeu tự port (đã xoá)", () => {
+  const pluginDir = join(root, "plugins/sachnoi-bridge/ios/Plugin");
+  const server = readFileSync(join(pluginDir, "TtsServer.swift"), "utf8");
+  assert.ok(server.includes("SherpaTtsEngine"), "TtsServer chưa dùng SherpaTtsEngine");
+  assert.ok(!server.includes("NWListener"), "TtsServer vẫn còn server HTTP thừa");
+  assert.ok(!server.includes("NWConnection"), "TtsServer vẫn còn xử lý kết nối HTTP thừa");
+  const sherpa = readFileSync(join(pluginDir, "SherpaTts.swift"), "utf8");
+  assert.ok(sherpa.includes("import SherpaOnnxC"), "SherpaTts chưa import SherpaOnnxC");
+  assert.ok(sherpa.includes("SherpaOnnxCreateOfflineTts"), "thiếu gọi tạo engine sherpa");
+  assert.ok(sherpa.includes("SherpaOnnxOfflineTtsGenerate"), "thiếu gọi tổng hợp sherpa");
+  for (const gone of ["VieNeuEngine.swift", "Phonemizer.swift", "SpeechUtils.swift", "SeaG2p.swift", "BpeTokenizer.swift"]) {
+    assert.ok(!existsSync(join(pluginDir, gone)), `${gone} phải đã xoá`);
+  }
+  const podspec = readFileSync(join(root, "plugins/sachnoi-bridge/SachnoiBridge.podspec"), "utf8");
+  assert.ok(podspec.includes("sherpa-onnx.xcframework"), "podspec chưa khai sherpa xcframework");
+  assert.ok(!podspec.includes("dependency 'onnxruntime-objc'"), "podspec vẫn còn dependency onnxruntime-objc");
 });
 
 test("P0-C: không còn chữ 'cần tải gói Core trước' trong web-src", () => {
   assert.ok(!html.includes("cần tải gói Core trước"), "index.html vẫn còn câu lỗi thời");
-  assert.ok(html.includes("<h3>Giọng VieNeu</h3>"), "tiêu đề Giọng VieNeu phải còn");
+  assert.ok(html.includes("<h3>Giọng đọc</h3>"), "tiêu đề tab Giọng phải là 'Giọng đọc' (2.0.0: Piper)");
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const stale = walk(join(root, "web-src"))

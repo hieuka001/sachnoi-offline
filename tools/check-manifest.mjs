@@ -18,6 +18,7 @@ for (const p of m.packs || []) {
     }
   }
 }
-if ((m.voices || []).length < 20) errors.push(`Danh sách giọng quá ít: ${m.voices?.length}`);
+// 2.0.0: engine Piper gắn sẵn chỉ có 1 giọng — tối thiểu 1 là đủ.
+if ((m.voices || []).length < 1) errors.push(`Danh sách giọng trống`);
 if (errors.length) { console.error("MANIFEST LỖI:\n- " + errors.join("\n- ")); process.exit(1); }
 console.log(`Manifest OK: ${m.packs.length} gói, ${m.voices.length} giọng, version ${m.version}`);

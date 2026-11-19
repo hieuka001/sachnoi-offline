@@ -355,7 +355,7 @@ public final class NativePlayer: NSObject, AVAudioPlayerDelegate {
         } catch { return nil }
     }
 
-    /// 1.9.4: WAV do chính VieNeuEngine.wavData viết (RIFF, PCM16, mono) —
+    /// 1.9.4: WAV do engine viết (RIFF, PCM16, mono; 2.0.0: SherpaTtsEngine.wavData) —
     /// giải mã thẳng trong bộ nhớ thay vì ghi file tạm rồi đọc lại bằng
     /// AVAudioFile ở mỗi đoạn (đỡ một vòng đĩa ngay tại ranh giới phát).
     /// Parse không khớp thì trả nil, nơi gọi tự rơi về đường file cũ.

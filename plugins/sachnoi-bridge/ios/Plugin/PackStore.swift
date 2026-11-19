@@ -29,19 +29,13 @@ public enum PackStore {
         try? url.setResourceValues(values)
     }
 
-    /// Thư mục assets của VieNeu: từ 1.0.5 core int8 GẮN SẴN trong app nên ưu
-    /// tiên bản bundle trước (bản đã tải trùng lặp có thể xoá để giải phóng máy),
-    /// sau đó mới tới các gói đã tải (fp32/nano khi có).
+    /// 2.0.0: assets TTS nay là model Piper GẮN SẴN trong app (thư mục
+    /// PiperAssets). Giữ tên hàm vì BackgroundTasks dùng làm cổng kiểm
+    /// "có TTS thì nạp ấm engine" — không còn gói VieNeu tải về nữa.
     public static func vieneuAssetsURL() -> URL? {
-        if let bundled = Bundle.main.url(forResource: "TTSAssets", withExtension: nil),
-           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("config.json").path) {
+        if let bundled = Bundle.main.url(forResource: "PiperAssets", withExtension: nil),
+           FileManager.default.fileExists(atPath: bundled.appendingPathComponent("vi_VN-vais1000-medium.onnx").path) {
             return bundled
-        }
-        for packId in ["vieneu-turbo-int8", "vieneu-turbo-fp32", "vieneu-nano"] {
-            let dir = packURL(packId)
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("config.json").path) {
-                return dir
-            }
         }
         return nil
     }
