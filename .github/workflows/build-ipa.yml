@@ -34,22 +34,23 @@ jobs:
       - name: Build web (đóng kèm trong app — app chạy offline, không nạp web từ xa)
         run: npm run build:web
 
-      # 2.0.0: TTS = sherpa-onnx (xcframework tĩnh chính thức của k2-fsa,
-      # ghim bản 1.13.8) + model Piper tiếng Việt gắn sẵn. Engine VieNeu tự
-      # port + sea-g2p Rust đã XOÁ nên không còn bước build Rust nữa.
+      # 2.0.0: TTS = sherpa-onnx (xcframework chính thức của k2-fsa, ghim bản
+      # 1.13.8) + model Piper tiếng Việt gắn sẵn. Engine VieNeu tự port +
+      # sea-g2p Rust đã XOÁ nên không còn bước build Rust nữa.
+      # Biến thể "shared-onnxruntime-static": dylib SherpaOnnxC TỰ CHỨA
+      # onnxruntime (đã kiểm chứng tại máy build: 0 tham chiếu Ort chưa định
+      # nghĩa, chỉ link framework hệ thống). Biến thể "-ios-static" KHÔNG tự
+      # chứa — link lỗi "Undefined _OrtGetApiBase" (CI 44453106316).
+      # Gói của biến thể này đã sẵn tên SherpaOnnxC.xcframework.
       - name: Fetch sherpa-onnx xcframework (k2-fsa release, pinned)
         run: |
           curl -fL --retry 3 -o /tmp/sherpa-ios.zip \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-static.xcframework.zip"
-          echo "6b8e769cb153343270fdccbe92e3b3db0d1c421d67fa0989ab01fdf5b2fcf2de  /tmp/sherpa-ios.zip" | shasum -a 256 -c -
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/xcframework/sherpa-onnx-v1.13.8-ios-shared-onnxruntime-static.xcframework.zip"
+          echo "e259a7d3b38ad7dec49bb078252a30bb42ede8355e2bb130cf8c1c78ed131f75  /tmp/sherpa-ios.zip" | shasum -a 256 -c -
           rm -rf /tmp/sherpa-ios && unzip -q /tmp/sherpa-ios.zip -d /tmp/sherpa-ios
           mkdir -p plugins/sachnoi-bridge/ios/Frameworks
-          # QUAN TRỌNG: framework bên trong tên là SherpaOnnxC.framework nhưng
-          # gói tên sherpa-onnx.xcframework — CocoaPods lấy tên gói làm cờ
-          # -framework khi link nên báo "framework 'sherpa-onnx' not found".
-          # Đổi tên gói theo đúng framework bên trong là hết.
           rm -rf plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
-          cp -R /tmp/sherpa-ios/sherpa-onnx.xcframework plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
+          cp -R /tmp/sherpa-ios/SherpaOnnxC.xcframework plugins/sachnoi-bridge/ios/Frameworks/
           ls plugins/sachnoi-bridge/ios/Frameworks/SherpaOnnxC.xcframework
 
       # Model Piper vi_VN-vais1000-medium từ Release piper-vi-v1 của chính
@@ -97,7 +98,11 @@ jobs:
           test -f "$APP_PATH/PiperAssets/tokens.txt" || { echo "LỖI: IPA thiếu tokens.txt"; exit 1; }
           test -d "$APP_PATH/PiperAssets/espeak-ng-data" || { echo "LỖI: IPA thiếu espeak-ng-data"; exit 1; }
           echo "--- Kiểm tra binary có sherpa-onnx ---"
-          strings "$APP_PATH/App" | grep -m1 "SherpaOnnxCreateOfflineTts" || { echo "LỖI: binary không có sherpa-onnx"; exit 1; }
+          # SherpaOnnxC là framework ĐỘNG nhúng trong .app (onnxruntime nằm
+          # trong nó) — kiểm ở binary của framework, không phải binary App.
+          FW_BIN=$(find "$APP_PATH" -name "SherpaOnnxC" -type f | head -1)
+          [ -n "$FW_BIN" ] || { echo "LỖI: không thấy framework SherpaOnnxC trong .app"; exit 1; }
+          strings "$FW_BIN" | grep -m1 "SherpaOnnxCreateOfflineTts" || { echo "LỖI: framework không có sherpa-onnx"; exit 1; }
           du -sh "$APP_PATH/PiperAssets"
           du -sh "$APP_PATH"
           rm -rf Payload && mkdir Payload
