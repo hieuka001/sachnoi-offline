@@ -13,11 +13,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // === CHẠY NỀN 2/4: đăng ký BGTaskScheduler (bắt buộc trước khi launch xong) ===
         BackgroundTasks.register()
         BackgroundTasks.scheduleAll()
-        // Nạp engine VieNeu sớm nếu gói core đã tải (app nhẹ: chưa tải thì bỏ qua,
-        // web sẽ hướng dẫn tải ở lần đầu mở).
-        if PackStore.vieneuAssetsURL() != nil {
-            SachNoiBridgePlugin.startTtsEngine()
-        }
+        // Nạp ấm giọng hệ thống sớm (3.3.0: model Supertonic gắn sẵn
+        // nhưng engine Supertonic DỰNG LƯỜI ở lần chọn giọng đầu tiên —
+        // xem TtsServer.warmup — nên ở đây chỉ nạp ấm giọng mặc định,
+        // không dựng Supertonic để khỏi giữ ~145MB thường trực).
+        SachNoiBridgePlugin.startTtsEngine()
         return true
     }
 
